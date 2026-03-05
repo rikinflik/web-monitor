@@ -42,7 +42,15 @@ class MonitoringService
             Log::error("Monitor check failed for {$monitor->url}: " . $e->getMessage());
         }
 
-        $this->recordLog($monitor, $status, $responseTime, $statusCode);
+        $oldStatus = $monitor->status;
+
+        // Solo registramos si el nuevo estado es 'down',
+        // o si ha habido un cambio de estado (de 'down' a 'up', o de 'up' a 'down').
+        // Esto evita registrar cada chequeo exitoso consecutivo.
+        if ($status === 'down' || ($oldStatus === 'down' && $status === 'up')) {
+            $this->recordLog($monitor, $status, $responseTime, $statusCode);
+        }
+
         $this->updateStatus($monitor, $status);
     }
 
