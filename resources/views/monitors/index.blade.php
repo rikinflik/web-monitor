@@ -4,9 +4,14 @@
 <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
     <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-semibold">Mis Monitores</h1>
-        <a href="{{ route('monitors.create') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-            + Añadir Monitor
-        </a>
+        <div class="flex space-x-2">
+            <a href="{{ route('monitors.index') }}" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded">
+                Refresh
+            </a>
+            <a href="{{ route('monitors.create') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                + Añadir Monitor
+            </a>
+        </div>
     </div>
 
     <div class="overflow-x-auto">
