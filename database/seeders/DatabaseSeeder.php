@@ -21,6 +21,14 @@ class DatabaseSeeder extends Seeder
             'name' => 'Admin User',
             'email' => 'admin@example.com',
             'password' => \Illuminate\Support\Facades\Hash::make('password'),
+            'role' => User::ROLE_ADMIN,
+        ]);
+
+        User::factory()->create([
+            'name' => 'Regular User',
+            'email' => 'user@example.com',
+            'password' => \Illuminate\Support\Facades\Hash::make('password'),
+            'role' => User::ROLE_USER,
         ]);
     }
 }
