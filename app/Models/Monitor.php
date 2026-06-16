@@ -22,10 +22,17 @@ class Monitor extends Model
         'user_id',
         'public_token',
         'webhook_url',
+        'basic_auth_user',
+        'basic_auth_password',
+    ];
+
+    protected $hidden = [
+        'basic_auth_password',
     ];
 
     protected $casts = [
         'last_checked_at' => 'datetime',
+        'basic_auth_password' => 'encrypted',
     ];
 
     protected static function booted(): void

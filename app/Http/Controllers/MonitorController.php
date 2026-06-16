@@ -48,7 +48,11 @@ class MonitorController extends Controller
     public function update(UpdateMonitorRequest $request, Monitor $monitor): RedirectResponse
     {
         $this->authorize('update', $monitor);
-        $monitor->update($request->validated());
+        $data = $request->validated();
+        if (empty($data['basic_auth_password'])) {
+            unset($data['basic_auth_password']);
+        }
+        $monitor->update($data);
         return redirect()->route('monitors.index')->with('success', 'Monitor updated successfully.');
     }
 

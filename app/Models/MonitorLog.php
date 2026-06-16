@@ -13,6 +13,7 @@ class MonitorLog extends Model
         'status',
         'response_time',
         'status_code',
+        'error_message',
         'checked_at',
     ];
 

@@ -16,6 +16,8 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-Route::get('/status/{token}', [PublicStatusController::class, 'show'])->name('public.status');
+Route::get('/status/{token}', [PublicStatusController::class, 'show'])
+    ->name('public.status')
+    ->middleware('throttle:30,1');
 
 require __DIR__.'/auth.php';
