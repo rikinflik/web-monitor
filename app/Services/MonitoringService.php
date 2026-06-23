@@ -29,6 +29,7 @@ class MonitoringService
                 'timeout' => $monitor->timeout,
                 'http_errors' => false,
                 'stream' => true,
+                'verify' => false,
             ];
 
             if ($monitor->basic_auth_user && $monitor->basic_auth_password) {

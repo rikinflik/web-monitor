@@ -19,6 +19,8 @@ class MonitorLog extends Model
 
     protected $casts = [
         'checked_at' => 'datetime',
+        'status_code' => 'integer',
+        'response_time' => 'integer',
     ];
 
     public function monitor(): BelongsTo
