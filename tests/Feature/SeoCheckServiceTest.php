@@ -225,6 +225,67 @@ class SeoCheckServiceTest extends TestCase
         $this->assertEquals(SeoCheck::WITHOUT_SLASH, $seoCheck->fresh()->trailing_slash_redirect);
     }
 
+    public function test_root_url_detects_site_wide_slash_stripping_via_synthetic_probe(): void
+    {
+        // A root URL never redirects onto its own slash variant, so the probe
+        // targets a synthetic sub-path. A site that strips trailing slashes
+        // redirects "/_seo-slash-probe/" to "/_seo-slash-probe".
+        $seoCheck = $this->seoCheckForUrl('https://www.example.com/');
+        $service = $this->makeService($this->queue(
+            slash: $this->redirect('https://www.example.com/_seo-slash-probe'),
+        ));
+
+        $service->check($seoCheck);
+
+        $this->assertEquals(SeoCheck::WITHOUT_SLASH, $seoCheck->fresh()->trailing_slash_redirect);
+    }
+
+    public function test_root_url_probes_the_synthetic_slash_path(): void
+    {
+        $history = [];
+        $seoCheck = $this->seoCheckForUrl('https://www.example.com/');
+        $service = $this->makeServiceWithHistory($this->queue(), $history);
+
+        $service->check($seoCheck);
+
+        // Third request is the trailing-slash probe.
+        $this->assertSame(
+            'https://www.example.com/_seo-slash-probe/',
+            (string) $history[2]['request']->getUri(),
+        );
+    }
+
+    public function test_root_url_with_empty_path_also_uses_the_synthetic_probe(): void
+    {
+        // Stored without a trailing slash, so parse_url() yields no path key at
+        // all. The empty-path root must be treated identically to "/".
+        $history = [];
+        $seoCheck = $this->seoCheckForUrl('https://www.example.com');
+        $service = $this->makeServiceWithHistory($this->queue(
+            slash: $this->redirect('https://www.example.com/_seo-slash-probe'),
+        ), $history);
+
+        $service->check($seoCheck);
+
+        $this->assertSame(
+            'https://www.example.com/_seo-slash-probe/',
+            (string) $history[2]['request']->getUri(),
+        );
+        $this->assertEquals(SeoCheck::WITHOUT_SLASH, $seoCheck->fresh()->trailing_slash_redirect);
+    }
+
+    public function test_root_url_without_slash_policy_yields_none(): void
+    {
+        // The synthetic probe returns 200 (no redirect): the site has no
+        // trailing-slash policy, so the dimension stays NONE.
+        $seoCheck = $this->seoCheckForUrl('https://www.example.com/');
+        $service = $this->makeService($this->queue());
+
+        $service->check($seoCheck);
+
+        $this->assertEquals(SeoCheck::NONE, $seoCheck->fresh()->trailing_slash_redirect);
+    }
+
     public function test_no_variant_redirects_yields_none_for_all_three(): void
     {
         $seoCheck = $this->seoCheckForUrl('https://example.com/');
@@ -463,9 +524,9 @@ class SeoCheckServiceTest extends TestCase
 
         $urls = array_map(fn ($e) => (string) $e['request']->getUri(), $history);
         $this->assertSame([
-            'https://www.example.com/',       // www counterpart
-            'http://example.com/',            // https counterpart
-            'https://example.com',            // trailing-slash counterpart (root)
+            'https://www.example.com/',                  // www counterpart
+            'http://example.com/',                       // https counterpart
+            'https://example.com/_seo-slash-probe/',     // trailing-slash counterpart (root -> synthetic path)
             'https://example.com/robots.txt',
             'https://example.com/sitemap.xml',
         ], $urls);

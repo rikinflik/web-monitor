@@ -28,6 +28,16 @@ final class SeoCheckService
      */
     private const HEAD_UNSUPPORTED = [405, 501];
 
+    /**
+     * Synthetic sub-path (with a trailing slash) probed when the monitored URL
+     * is the site root. The root itself never redirects onto its slash variant
+     * (both "/" and "" resolve to the home), so a server-wide trailing-slash
+     * policy is invisible there. A non-existent sub-path reveals the rewrite
+     * rule instead of a real page's behaviour, because slash-stripping rules
+     * fire before routing (even on paths that ultimately 404).
+     */
+    private const SLASH_PROBE_PATH = '/_seo-slash-probe/';
+
     public function __construct(private readonly Client $client) {}
 
     /**
@@ -206,6 +216,12 @@ final class SeoCheckService
 
     /**
      * Build the trailing-slash counterpart: toggle a single trailing "/".
+     *
+     * For a root URL, toggling would only swap "/" for "" (or vice versa), and
+     * servers never redirect between those. Instead probe SLASH_PROBE_PATH so a
+     * site-wide slash-stripping policy is still detected — this reveals the
+     * WITHOUT_SLASH direction only, which is the one propagated by rewrite rules
+     * to arbitrary paths.
      */
     private function slashCounterpart(string $url): string
     {
@@ -213,7 +229,7 @@ final class SeoCheckService
         $path = $parts['path'] ?? '';
 
         if ($path === '' || $path === '/') {
-            $parts['path'] = $path === '/' ? '' : '/';
+            $parts['path'] = self::SLASH_PROBE_PATH;
         } else {
             $parts['path'] = str_ends_with($path, '/') ? rtrim($path, '/') : $path . '/';
         }
