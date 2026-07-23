@@ -14,30 +14,30 @@
         </div>
     </div>
 
-    <div class="overflow-x-auto">
-        <table class="min-w-full divide-y divide-gray-200">
+    <div class="w-full">
+        <table class="w-full table-fixed divide-y divide-gray-200">
             <thead class="bg-gray-50">
                 <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">URL</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">www</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">HTTPS</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trailing slash</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">robots.txt</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sitemap</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Última revisión</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">URL</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">www</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">HTTPS</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trailing</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">robots</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sitemap</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revisión</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                 </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
                 @foreach($monitors as $monitor)
                 @php($seoCheck = $monitor->seoCheck)
                 <tr>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ $monitor->name }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $monitor->url }}</td>
+                    <td class="px-3 py-4 text-sm font-medium text-gray-900 break-words">{{ $monitor->name }}</td>
+                    <td class="px-3 py-4 text-sm text-gray-500 break-all">{{ $monitor->url }}</td>
 
                     @foreach(['www_redirect', 'https_redirect', 'trailing_slash_redirect'] as $dimension)
-                    <td class="px-6 py-4 whitespace-nowrap">
+                    <td class="px-3 py-4 whitespace-nowrap">
                         @if($seoCheck && $seoCheck->{$dimension} !== \App\Models\SeoCheck::NONE)
                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">{{ $seoCheck->{$dimension} }}</span>
                         @else
@@ -47,7 +47,7 @@
                     @endforeach
 
                     @foreach(['robots_ok', 'sitemap_ok'] as $flag)
-                    <td class="px-6 py-4 whitespace-nowrap">
+                    <td class="px-3 py-4 whitespace-nowrap">
                         @if($seoCheck && $seoCheck->{$flag})
                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">OK</span>
                         @else
@@ -56,10 +56,10 @@
                     </td>
                     @endforeach
 
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="px-3 py-4 text-sm text-gray-500">
                         {{ $seoCheck?->last_checked_at?->diffForHumans() ?? 'Nunca' }}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <td class="px-3 py-4 whitespace-nowrap text-sm font-medium">
                         @if($seoCheck)
                         <form action="{{ route('seo.recheck', $seoCheck) }}" method="POST" class="inline-block">
                             @csrf

@@ -17,12 +17,12 @@ Schedule::call(function () {
     });
 })->everyMinute();
 
-// SEO checks run on their own, longer per-entry cadence (interval in minutes),
-// fully decoupled from the Monitor uptime loop above.
+// SEO checks run three times a day at fixed local wall-clock times (06:00,
+// 10:00, 14:00 Europe/Madrid), fully decoupled from the Monitor uptime loop
+// above. The schedule itself controls cadence, so every entry is dispatched on
+// each run regardless of its per-entry interval.
 Schedule::call(function () {
     SeoCheck::cursor()->each(function (SeoCheck $seoCheck) {
-        if (!$seoCheck->last_checked_at || $seoCheck->last_checked_at->addMinutes($seoCheck->interval)->isPast()) {
-            CheckSeoJob::dispatch($seoCheck);
-        }
+        CheckSeoJob::dispatch($seoCheck);
     });
-})->everyMinute();
+})->cron('0 6,10,14 * * *')->timezone('Europe/Madrid');
