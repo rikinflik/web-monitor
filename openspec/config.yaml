@@ -1,0 +1,55 @@
+strict_tdd: true
+context: |
+  webmonitor is a Node.js/TypeScript ESM, PHP project.
+  Detected markers: package.json, npm package manager, composer.json.
+  Package managers: npm.
+  Additional evidence: PHP manifest detected via composer.json; Test-like files detected (15); examples: tests/Feature/AccessAdminPanelTest.php, tests/Feature/Auth/AuthenticationTest.php, tests/Feature/Auth/EmailVerificationTest.php, tests/Feature/Auth/PasswordConfirmationTest.php, tests/Feature/Auth/PasswordResetTest.php.
+  Primary test command: composer test.
+  Unit tests: Composer test script (composer test).
+  Integration tests: none.
+  E2E tests: none.
+rules:
+  proposal:
+    require_problem_statement: true
+  spec:
+    require_acceptance_criteria: true
+  design:
+    require_tradeoffs: true
+  tasks:
+    protect_review_workload: true
+  apply:
+    test_command: "composer test"
+  verify:
+    test_command: "composer test"
+testing:
+  detected: "2026-07-23"
+  runner:
+    command: "composer test"
+    framework: "Composer test script"
+  layers:
+    unit: "Composer test script"
+    integration: ""
+    e2e: ""
+  commands:
+    unit:
+      - scope: "."
+        command: "composer test"
+        framework: "Composer test script"
+    integration:
+      []
+    e2e:
+      []
+  coverage:
+    command: ""
+    commands:
+      []
+quality:
+  lint: ""
+  lint_commands:
+    []
+  typecheck: ""
+  typecheck_commands:
+    []
+  format: ""
+  format_commands:
+    []
