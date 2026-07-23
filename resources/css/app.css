@@ -1,3 +1,31 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* DataTables: sus controles usan la clase .dt-input y DataTables les aplica
+   `padding:4px`, que aplasta el select "Mostrar" (sin espacio para la flecha)
+   y el buscador. Reponemos padding, borde y radio con suficiente especificidad
+   para ganar independientemente del orden de carga, y conviviendo con el reset
+   de @tailwindcss/forms.
+   Nota: CSS plano (fuera de @layer) a propósito — las clases .dt-* las genera
+   DataTables en runtime, así que Tailwind las purgaría si estuvieran en @layer. */
+div.dt-container div.dt-length select.dt-input {
+    min-width: 5rem;
+    padding: 0.375rem 2rem 0.375rem 0.75rem; /* hueco derecho para la flecha */
+    margin: 0 0.35rem;
+    border: 1px solid #d1d5db; /* gray-300 */
+    border-radius: 0.375rem;
+    background-color: #fff;
+}
+
+div.dt-container div.dt-search input.dt-input {
+    padding: 0.375rem 0.75rem;
+    margin-left: 0.5rem;
+    border: 1px solid #d1d5db; /* gray-300 */
+    border-radius: 0.375rem;
+}
+
+div.dt-container div.dt-length,
+div.dt-container div.dt-search {
+    margin-bottom: 0.75rem;
+}
