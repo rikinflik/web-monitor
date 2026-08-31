@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Monitor;
 use App\Models\User;
 use App\Notifications\MonitorStatusChanged;
+use App\Notifications\TestNotification;
 use App\Services\MonitoringService;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
@@ -215,5 +216,68 @@ class NotificationPreferencesTest extends TestCase
     {
         $this->patch('/profile/notifications', ['notify_mode' => User::NOTIFY_NONE])
             ->assertRedirect('/login');
+    }
+
+    // -------------------------------------------------------------------------
+    // Test email button
+    // -------------------------------------------------------------------------
+
+    public function test_profile_page_offers_a_test_email_button(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->get('/profile');
+
+        $response->assertSee('Send test email');
+        $response->assertSee($user->email);
+    }
+
+    public function test_test_email_goes_to_the_signed_in_user(): void
+    {
+        Notification::fake();
+        $user = User::factory()->create();
+        $bystander = User::factory()->create();
+
+        $response = $this->actingAs($user)->post('/profile/notifications/test');
+
+        $response->assertSessionHasNoErrors()->assertRedirect('/profile');
+        $this->assertSame('test-notification-sent', session('status'));
+
+        Notification::assertSentTo($user, TestNotification::class);
+        Notification::assertNotSentTo($bystander, TestNotification::class);
+    }
+
+    public function test_test_email_is_sent_whatever_the_notification_mode(): void
+    {
+        Notification::fake();
+        $user = User::factory()->create(['notify_mode' => User::NOTIFY_NONE]);
+
+        $this->actingAs($user)->post('/profile/notifications/test');
+
+        // Opting out of alerts must not disable the diagnostic itself.
+        Notification::assertSentTo($user, TestNotification::class);
+    }
+
+    public function test_a_transport_failure_is_reported_instead_of_crashing(): void
+    {
+        Notification::shouldReceive('send')
+            ->once()
+            ->andThrow(new \RuntimeException('Connection refused: smtp.example.com:587'));
+
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->post('/profile/notifications/test');
+
+        $response->assertRedirect('/profile');
+        $response->assertSessionHasErrors('test', errorBag: 'sendTestNotification');
+        $this->assertStringContainsString(
+            'Connection refused',
+            session('errors')->getBag('sendTestNotification')->first('test'),
+        );
+    }
+
+    public function test_guests_cannot_send_test_emails(): void
+    {
+        $this->post('/profile/notifications/test')->assertRedirect('/login');
     }
 }

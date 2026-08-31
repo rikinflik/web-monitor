@@ -6,9 +6,12 @@ use App\Http\Requests\ProfileUpdateRequest;
 use App\Http\Requests\UpdateNotificationPreferencesRequest;
 use App\Models\Monitor;
 use App\Models\User;
+use App\Notifications\TestNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\View\View;
 
@@ -63,6 +66,30 @@ class ProfileController extends Controller
         }
 
         return Redirect::route('profile.edit')->with('status', 'notification-preferences-updated');
+    }
+
+    /**
+     * Send a one-off test email to the signed-in user.
+     *
+     * The mail configuration is otherwise only exercised when a site actually
+     * goes down, so a misconfigured SMTP host stays invisible until it matters.
+     * The send is deliberately synchronous and the failure is surfaced verbatim,
+     * because the whole point is to read the transport error.
+     */
+    public function sendTestNotification(Request $request): RedirectResponse
+    {
+        try {
+            Notification::send($request->user(), new TestNotification());
+        } catch (\Throwable $e) {
+            Log::error('Test notification failed: ' . $e->getMessage());
+
+            return Redirect::route('profile.edit')->withErrors(
+                ['test' => $e->getMessage()],
+                'sendTestNotification',
+            );
+        }
+
+        return Redirect::route('profile.edit')->with('status', 'test-notification-sent');
     }
 
     /**
