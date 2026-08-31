@@ -2,22 +2,34 @@
 
 namespace App\Notifications;
 
+use App\Models\Monitor;
+use App\Notifications\Concerns\LinksToMonitor;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Carbon;
 
-use App\Models\Monitor;
-
+/**
+ * Sent when a monitor crosses between up and down.
+ *
+ * The quiet stretch of a long outage is covered by MonitorStillDown instead.
+ */
 class MonitorStatusChanged extends Notification
 {
-    use Queueable;
+    use Queueable, LinksToMonitor;
 
     /**
-     * Create a new notification instance.
+     * @param string $status
+     *   The status just entered: Monitor::STATUS_UP or Monitor::STATUS_DOWN.
+     * @param \Illuminate\Support\Carbon|null $downSince
+     *   Start of the outage being reported as over. Passed explicitly because
+     *   the column is cleared as part of recovering.
      */
-    public function __construct(public Monitor $monitor, public string $status)
-    {
+    public function __construct(
+        public Monitor $monitor,
+        public string $status,
+        public ?Carbon $downSince = null,
+    ) {
         //
     }
 
@@ -36,13 +48,37 @@ class MonitorStatusChanged extends Notification
      */
     public function toMail(object $notifiable): MailMessage
     {
-        $statusText = strtoupper($this->status);
+        return $this->status === Monitor::STATUS_UP
+            ? $this->recoveryMail($notifiable)
+            : $this->outageMail($notifiable);
+    }
 
+    protected function outageMail(object $notifiable): MailMessage
+    {
         return (new MailMessage)
-                    ->subject("Monitor Status Changed: {$this->monitor->name} is {$statusText}")
-                    ->line("The monitor for {$this->monitor->url} is now {$statusText}.")
-                    ->action('View Monitor', url("/monitors/{$this->monitor->id}"))
-                    ->line('Thank you for using our application!');
+            ->subject("Monitor DOWN: {$this->monitor->name}")
+            ->line("The monitor for {$this->monitor->url} is now DOWN.")
+            ->action('View Monitor', $this->monitorUrlFor($this->monitor, $notifiable))
+            ->line('You will get reminders until it is back up.');
+    }
+
+    protected function recoveryMail(object $notifiable): MailMessage
+    {
+        $duration = $this->monitor->outageDuration($this->downSince);
+
+        $message = (new MailMessage)
+            ->subject($duration
+                ? "Monitor RESTORED: {$this->monitor->name} (was down for {$duration})"
+                : "Monitor RESTORED: {$this->monitor->name}")
+            ->line("The monitor for {$this->monitor->url} is back UP.");
+
+        if ($duration) {
+            $message->line("It was down for {$duration}.");
+        }
+
+        return $message
+            ->action('View Monitor', $this->monitorUrlFor($this->monitor, $notifiable))
+            ->line('No further reminders will be sent for this outage.');
     }
 
     /**
@@ -53,7 +89,8 @@ class MonitorStatusChanged extends Notification
     public function toArray(object $notifiable): array
     {
         return [
-            //
+            'monitor_id' => $this->monitor->id,
+            'status' => $this->status,
         ];
     }
 }

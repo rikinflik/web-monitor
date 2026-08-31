@@ -43,6 +43,22 @@ class UserResource extends Resource
                     ])
                     ->required()
                     ->default(User::ROLE_USER),
+                Forms\Components\Select::make('notify_mode')
+                    ->label('Notificaciones de caída')
+                    ->options([
+                        User::NOTIFY_ALL => 'Todas las webs',
+                        User::NOTIFY_SELECTED => 'Sólo las webs seleccionadas',
+                        User::NOTIFY_NONE => 'Ninguna',
+                    ])
+                    ->required()
+                    ->live()
+                    ->default(User::NOTIFY_ALL),
+                Forms\Components\Select::make('notifiedMonitors')
+                    ->label('Webs seleccionadas')
+                    ->relationship('notifiedMonitors', 'name')
+                    ->multiple()
+                    ->preload()
+                    ->visible(fn (Forms\Get $get): bool => $get('notify_mode') === User::NOTIFY_SELECTED),
             ]);
     }
 
@@ -61,6 +77,26 @@ class UserResource extends Resource
                         User::ROLE_USER => 'success',
                         default => 'gray',
                     }),
+                Tables\Columns\TextColumn::make('notify_mode')
+                    ->label('Notificaciones')
+                    ->badge()
+                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                        User::NOTIFY_ALL => 'Todas',
+                        User::NOTIFY_SELECTED => 'Seleccionadas',
+                        User::NOTIFY_NONE => 'Ninguna',
+                        default => $state,
+                    })
+                    ->color(fn (string $state): string => match ($state) {
+                        User::NOTIFY_ALL => 'success',
+                        User::NOTIFY_SELECTED => 'warning',
+                        User::NOTIFY_NONE => 'gray',
+                        default => 'gray',
+                    }),
+                Tables\Columns\TextColumn::make('notifiedMonitors.name')
+                    ->label('Webs')
+                    ->badge()
+                    ->separator(',')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('email_verified_at')
                     ->dateTime()
                     ->sortable(),

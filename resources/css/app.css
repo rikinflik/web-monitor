@@ -29,3 +29,9 @@ div.dt-container div.dt-length,
 div.dt-container div.dt-search {
     margin-bottom: 0.75rem;
 }
+
+/* Alpine: oculta los bloques marcados con x-cloak hasta que Alpine arranca,
+   para que la lista de webs no parpadee antes de evaluar x-show. */
+[x-cloak] {
+    display: none !important;
+}

@@ -4,9 +4,12 @@ namespace App\Services;
 
 use App\Models\Monitor;
 use App\Notifications\MonitorStatusChanged;
+use App\Notifications\MonitorStillDown;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Log;
 
 class MonitoringService
@@ -19,7 +22,7 @@ class MonitoringService
     public function check(Monitor $monitor): void
     {
         $startTime = microtime(true);
-        $status = 'down';
+        $status = Monitor::STATUS_DOWN;
         $statusCode = null;
         $responseTime = 0;
         $errorMessage = null;
@@ -46,7 +49,7 @@ class MonitoringService
             $hasKeyword = $monitor->keyword ? str_contains($body, $monitor->keyword) : true;
 
             if ($isCorrectStatus && $hasKeyword) {
-                $status = 'up';
+                $status = Monitor::STATUS_UP;
             } elseif (!$isCorrectStatus) {
                 $errorMessage = "Codi HTTP inesperat: rebut {$statusCode}, esperat {$monitor->expected_status_code}";
             } elseif (!$hasKeyword) {
@@ -99,21 +102,96 @@ class MonitoringService
 
     protected function updateStatus(Monitor $monitor, string $newStatus): void
     {
-        $oldStatus = $monitor->status;
+        if ($monitor->status === $newStatus) {
+            $monitor->update(['last_checked_at' => now()]);
+            $this->remindIfStillDown($monitor);
+
+            return;
+        }
+
+        // Read before the update clears it, so a recovery email can report how
+        // long the outage lasted.
+        $downSince = $monitor->down_since;
+
         $monitor->update([
             'status' => $newStatus,
             'last_checked_at' => now(),
+            ...$this->outageTracking($newStatus),
         ]);
 
-        if ($oldStatus !== $newStatus) {
-            $this->notifyStatusChange($monitor, $newStatus);
-            $this->triggerWebhook($monitor, $newStatus);
-        }
+        $this->notifyStatusChange($monitor, $newStatus, $downSince);
+        $this->triggerWebhook($monitor, $newStatus);
     }
 
-    protected function notifyStatusChange(Monitor $monitor, string $status): void
+    /**
+     * Outage bookkeeping to apply when a monitor changes status.
+     *
+     * Going down starts the clock and counts the transition email as the first
+     * message of the outage, so the first reminder lands one backoff step
+     * later. Recovering wipes the state, so the next outage starts over at the
+     * shortest step.
+     *
+     * @return array<string, mixed>
+     */
+    protected function outageTracking(string $newStatus): array
     {
-        $monitor->user->notify(new MonitorStatusChanged($monitor, $status));
+        if ($newStatus === Monitor::STATUS_DOWN) {
+            return [
+                'down_since' => now(),
+                'last_down_notified_at' => now(),
+                'down_reminders_sent' => 0,
+            ];
+        }
+
+        return [
+            'down_since' => null,
+            'last_down_notified_at' => null,
+            'down_reminders_sent' => 0,
+        ];
+    }
+
+    /**
+     * Re-email about an ongoing outage once its backoff step has elapsed.
+     */
+    protected function remindIfStillDown(Monitor $monitor): void
+    {
+        if (! $monitor->isDownReminderDue()) {
+            return;
+        }
+
+        $reminderNumber = $monitor->down_reminders_sent + 1;
+
+        // Advance the schedule even when nobody is subscribed: switching
+        // notifications on mid-outage should not replay the whole backoff.
+        $monitor->update([
+            'last_down_notified_at' => now(),
+            'down_reminders_sent' => $reminderNumber,
+        ]);
+
+        $recipients = $monitor->notificationRecipients();
+
+        if ($recipients->isEmpty()) {
+            return;
+        }
+
+        Notification::send($recipients, new MonitorStillDown($monitor, $reminderNumber));
+    }
+
+    /**
+     * Email every user whose notification preference covers this monitor.
+     *
+     * Recipients no longer depend on monitor ownership — see
+     * Monitor::notificationRecipients().
+     */
+    protected function notifyStatusChange(Monitor $monitor, string $status, ?Carbon $downSince = null): void
+    {
+        $recipients = $monitor->notificationRecipients();
+
+        if ($recipients->isEmpty()) {
+            return;
+        }
+
+        Notification::send($recipients, new MonitorStatusChanged($monitor, $status, $downSince));
     }
 
     protected function triggerWebhook(Monitor $monitor, string $status): void
