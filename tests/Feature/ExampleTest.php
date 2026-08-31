@@ -2,18 +2,17 @@
 
 namespace Tests\Feature;
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
     /**
-     * A basic test example.
+     * The root URL is a redirect to the monitor list, not a landing page.
      */
-    public function test_the_application_returns_a_successful_response(): void
+    public function test_the_root_url_redirects_to_the_monitor_list(): void
     {
         $response = $this->get('/');
 
-        $response->assertStatus(200);
+        $response->assertRedirect(route('monitors.index'));
     }
 }

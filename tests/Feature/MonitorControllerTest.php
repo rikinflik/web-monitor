@@ -5,11 +5,10 @@ namespace Tests\Feature;
 use App\Models\Monitor;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
-/**
- * @group monitor-controller
- */
+#[Group('monitor-controller')]
 class MonitorControllerTest extends TestCase
 {
     use RefreshDatabase;

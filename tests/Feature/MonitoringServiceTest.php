@@ -16,11 +16,10 @@ use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
-/**
- * @group monitoring-service
- */
+#[Group('monitoring-service')]
 class MonitoringServiceTest extends TestCase
 {
     use RefreshDatabase;

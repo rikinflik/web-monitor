@@ -8,13 +8,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
 /**
  * Tests the one-to-one pairing invariant between Monitor and SeoCheck.
- *
- * @group seo-check-pairing
  */
+#[Group('seo-check-pairing')]
 class SeoCheckPairingTest extends TestCase
 {
     use RefreshDatabase;

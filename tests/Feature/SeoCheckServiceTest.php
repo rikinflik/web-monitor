@@ -13,15 +13,15 @@ use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Request as GuzzleRequest;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
 /**
  * Redirect dimensions are probed against the OPPOSITE variant of the stored
  * URL, in the order www / https / trailing slash, followed by robots.txt and
  * sitemap.xml. Each MockHandler queue below mirrors that request order.
- *
- * @group seo-check-service
  */
+#[Group('seo-check-service')]
 class SeoCheckServiceTest extends TestCase
 {
     use RefreshDatabase;

@@ -3,11 +3,10 @@
 namespace Tests\Unit;
 
 use App\Rules\NoPrivateUrl;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
-/**
- * @group no-private-url
- */
+#[Group('no-private-url')]
 class NoPrivateUrlTest extends TestCase
 {
     private function getError(string $url): ?string

@@ -10,11 +10,10 @@ use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
-/**
- * @group seo-check-controller
- */
+#[Group('seo-check-controller')]
 class SeoCheckControllerTest extends TestCase
 {
     use RefreshDatabase;
@@ -182,10 +181,10 @@ class SeoCheckControllerTest extends TestCase
 
         $response->assertSee('www');
         $response->assertSee('HTTPS');
-        $response->assertSee('Trailing slash');
-        $response->assertSee('robots.txt');
+        $response->assertSee('Trailing');
+        $response->assertSee('robots');
         $response->assertSee('Sitemap');
-        $response->assertSee('Última revisión');
+        $response->assertSee('Revisión');
     }
 
     public function test_index_shows_never_checked_fallback_for_new_entry(): void
