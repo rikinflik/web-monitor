@@ -57,13 +57,27 @@ return [
     */
     'telegram' => [
         'http' => [
-            'verify' => env('TELEGRAM_CA_BUNDLE', true),
+            // Resolved at runtime by AppServiceProvider from
+            // services.telegram-bot-api.ca_bundle — see the note there.
+            'verify' => true,
         ],
     ],
 
     'telegram-bot-api' => [
         'token' => env('TELEGRAM_BOT_TOKEN'),
         'alert_chat_id' => env('TELEGRAM_ALERT_CHAT_ID'),
+
+        /*
+        | Path to a CA bundle for the Telegram client, used when the system
+        | store is out of reach. A relative path is resolved against the
+        | application root at runtime, which is the point: panel-managed hosts
+        | can run scheduled tasks inside a chroot, where the very same file is
+        | /webmonitor.example.com/storage/... for cron and
+        | /var/www/vhosts/example.com/webmonitor.example.com/storage/... for
+        | everything else. A baked-in absolute path can only ever be right for
+        | one of them.
+        */
+        'ca_bundle' => env('TELEGRAM_CA_BUNDLE'),
     ],
 
 ];

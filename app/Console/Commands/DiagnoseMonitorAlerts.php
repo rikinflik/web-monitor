@@ -241,7 +241,8 @@ final class DiagnoseMonitorAlerts extends Command
         $this->info('  install-ca: copied '.$source);
         $this->reachability($target);
         $this->info('  install-ca: now add this to .env and re-run with --probe');
-        $this->line('    TELEGRAM_CA_BUNDLE='.$target);
+        // Relative on purpose: cron may see the app under a different root.
+        $this->line('    TELEGRAM_CA_BUNDLE='.ltrim(str_replace(base_path(), '', $target), '/'));
     }
 
     /**
