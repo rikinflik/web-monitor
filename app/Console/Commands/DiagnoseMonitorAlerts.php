@@ -263,7 +263,11 @@ final class DiagnoseMonitorAlerts extends Command
         }
 
         foreach (array_slice($hits, -3) as $line) {
-            $this->line('  '.str(trim($line))->limit(300));
+            // Keep the exception message and drop the stack trace: cURL states
+            // which CAfile and CApath it tried, and that is the whole answer.
+            $message = str(trim($line))->before(' at /')->limit(700);
+            $this->line('  '.$message);
+            $this->newLine();
         }
 
         $this->newLine();
