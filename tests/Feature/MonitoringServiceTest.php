@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Monitor;
+use App\Notifications\OperatorAlerts;
 use App\Models\MonitorLog;
 use App\Notifications\MonitorStatusChanged;
 use App\Services\MonitoringService;
@@ -27,14 +28,14 @@ class MonitoringServiceTest extends TestCase
     private function makeService(MockHandler $mock): MonitoringService
     {
         $stack = HandlerStack::create($mock);
-        return new MonitoringService(new Client(['handler' => $stack]));
+        return new MonitoringService(new Client(['handler' => $stack]), new OperatorAlerts);
     }
 
     private function makeServiceWithHistory(MockHandler $mock, array &$history): MonitoringService
     {
         $stack = HandlerStack::create($mock);
         $stack->push(Middleware::history($history));
-        return new MonitoringService(new Client(['handler' => $stack]));
+        return new MonitoringService(new Client(['handler' => $stack]), new OperatorAlerts);
     }
 
     private function connectException(string $message): ConnectException

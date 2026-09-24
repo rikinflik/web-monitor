@@ -3,8 +3,11 @@
 namespace App\Services;
 
 use App\Models\Monitor;
+use App\Notifications\MonitorStatusAlert;
 use App\Notifications\MonitorStatusChanged;
 use App\Notifications\MonitorStillDown;
+use App\Notifications\MonitorStillDownAlert;
+use App\Notifications\OperatorAlerts;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Carbon;
@@ -17,7 +20,10 @@ class MonitoringService
     // Caps body reads to prevent memory exhaustion on large responses
     private const MAX_BODY_BYTES = 524288; // 512 KB
 
-    public function __construct(protected Client $client) {}
+    public function __construct(
+        protected Client $client,
+        protected OperatorAlerts $alerts,
+    ) {}
 
     public function check(Monitor $monitor): void
     {
@@ -168,6 +174,11 @@ class MonitoringService
             'down_reminders_sent' => $reminderNumber,
         ]);
 
+        // Ahead of the email gate on purpose: the ops chat watches every
+        // monitor, so it must still be told about an outage that no user
+        // subscribed to.
+        $this->alerts->send(new MonitorStillDownAlert($monitor, $reminderNumber));
+
         $recipients = $monitor->notificationRecipients();
 
         if ($recipients->isEmpty()) {
@@ -178,13 +189,16 @@ class MonitoringService
     }
 
     /**
-     * Email every user whose notification preference covers this monitor.
+     * Announce a status change: always to the operator Telegram chat, then by
+     * email to every user whose notification preference covers this monitor.
      *
-     * Recipients no longer depend on monitor ownership — see
+     * Email recipients no longer depend on monitor ownership — see
      * Monitor::notificationRecipients().
      */
     protected function notifyStatusChange(Monitor $monitor, string $status, ?Carbon $downSince = null): void
     {
+        $this->alerts->send(new MonitorStatusAlert($monitor, $status, $downSince));
+
         $recipients = $monitor->notificationRecipients();
 
         if ($recipients->isEmpty()) {

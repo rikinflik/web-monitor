@@ -35,4 +35,21 @@ return [
         ],
     ],
 
+    /*
+    | Telegram bot used for operator alerts about monitor outages.
+    |
+    | `token` is the bot token from @BotFather and is read by the
+    | laravel-notification-channels/telegram package. `alert_chat_id` is the
+    | ops chat (a person or a group) that receives every outage alert; leaving
+    | it empty disables Telegram alerting entirely.
+    |
+    | This chat is deliberately independent of the per-user email preferences
+    | in users.notify_mode: it is the room that watches everything, not a
+    | subscriber.
+    */
+    'telegram-bot-api' => [
+        'token' => env('TELEGRAM_BOT_TOKEN'),
+        'alert_chat_id' => env('TELEGRAM_ALERT_CHAT_ID'),
+    ],
+
 ];

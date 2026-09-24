@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Monitor;
+use App\Notifications\OperatorAlerts;
 use App\Models\User;
 use App\Notifications\MonitorStatusChanged;
 use App\Notifications\TestNotification;
@@ -24,7 +25,7 @@ class NotificationPreferencesTest extends TestCase
     private function makeService(MockHandler $mock): MonitoringService
     {
         $stack = HandlerStack::create($mock);
-        return new MonitoringService(new Client(['handler' => $stack]));
+        return new MonitoringService(new Client(['handler' => $stack]), new OperatorAlerts);
     }
 
     /**

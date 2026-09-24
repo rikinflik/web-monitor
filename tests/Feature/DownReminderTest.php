@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Monitor;
+use App\Notifications\OperatorAlerts;
 use App\Models\User;
 use App\Notifications\MonitorStatusChanged;
 use App\Notifications\MonitorStillDown;
@@ -36,7 +37,7 @@ class DownReminderTest extends TestCase
         $responses = array_map(fn () => new Response($status), range(1, $times));
         $stack = HandlerStack::create(new MockHandler($responses));
 
-        return new MonitoringService(new Client(['handler' => $stack]));
+        return new MonitoringService(new Client(['handler' => $stack]), new OperatorAlerts);
     }
 
     private function upMonitor(?User $owner = null): Monitor

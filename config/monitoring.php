@@ -21,4 +21,17 @@ return [
 
     'down_reminder_backoff_minutes' => [15, 30, 60, 120, 240],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Display timezone
+    |--------------------------------------------------------------------------
+    |
+    | Timestamps are stored in UTC (config/app.php), which is correct but
+    | unreadable in an alert an operator scans at a glance. Absolute times in
+    | Telegram alerts are rendered in this zone instead.
+    |
+    */
+
+    'display_timezone' => env('MONITORING_DISPLAY_TIMEZONE', 'Europe/Madrid'),
+
 ];
