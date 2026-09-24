@@ -1,0 +1,177 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Models\Monitor;
+use App\Notifications\MonitorStatusAlert;
+use App\Notifications\OperatorAlerts;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Report why monitor outage alerts are, or are not, going out.
+ *
+ * Exists because `tinker --execute` is unusable on hosts that mangle quoted
+ * arguments (Plesk's task runner among them): every check here is reachable
+ * through a command name and flags, with no shell quoting to survive.
+ */
+final class DiagnoseMonitorAlerts extends Command
+{
+    protected $signature = 'monitor:diagnose
+        {filter? : Only monitors whose URL or name contains this}
+        {--alert : Send a real DOWN alert for the first match}
+        {--reset : Clear the outage state so the next check alerts again}';
+
+    protected $description = 'Report why monitor outage alerts are or are not going out.';
+
+    public function handle(OperatorAlerts $alerts): int
+    {
+        $this->telegramConfig();
+        $this->queueState();
+
+        $monitors = $this->monitors();
+
+        if ($monitors->isEmpty()) {
+            $this->warn('No monitors matched.');
+
+            return self::FAILURE;
+        }
+
+        $this->monitorTable($monitors);
+        $this->swallowedAlertErrors();
+
+        if ($this->option('reset')) {
+            $this->resetOutage($monitors->first());
+        }
+
+        if ($this->option('alert')) {
+            $this->fireAlert($alerts, $monitors->first());
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Whether the two env vars the alerting gate depends on are actually set.
+     *
+     * Values are never printed: a bot token in a task-runner log is a leak.
+     */
+    protected function telegramConfig(): void
+    {
+        $token = (string) config('services.telegram-bot-api.token');
+        $chat = (string) config('services.telegram-bot-api.alert_chat_id');
+
+        $this->line('<comment>Telegram config</comment>');
+        $this->line('  token      : '.($token !== '' ? 'set ('.strlen($token).' chars)' : 'EMPTY'));
+        $this->line('  chat id    : '.($chat !== '' ? $chat : 'EMPTY — alerting is OFF'));
+        $this->line('  channel    : '.(class_exists(\NotificationChannels\Telegram\TelegramMessage::class)
+            ? 'package loaded'
+            : 'MISSING — run composer install'));
+        $this->newLine();
+    }
+
+    protected function queueState(): void
+    {
+        $this->line('<comment>Queue</comment>');
+        $this->line('  connection : '.config('queue.default'));
+
+        if (config('queue.default') === 'database') {
+            $this->line('  pending    : '.DB::table('jobs')->count());
+            $this->line('  failed     : '.DB::table('failed_jobs')->count());
+        }
+
+        $this->newLine();
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, \App\Models\Monitor>
+     */
+    protected function monitors()
+    {
+        $filter = $this->argument('filter');
+
+        return Monitor::query()
+            ->when($filter, fn ($q) => $q
+                ->where('url', 'LIKE', "%{$filter}%")
+                ->orWhere('name', 'LIKE', "%{$filter}%"))
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * @param \Illuminate\Support\Collection<int, \App\Models\Monitor> $monitors
+     */
+    protected function monitorTable($monitors): void
+    {
+        $this->line('<comment>Monitors</comment>');
+        $this->table(
+            ['id', 'name', 'status', 'last checked', 'down since', 'last notified', 'sent', 'due'],
+            $monitors->map(fn (Monitor $m) => [
+                $m->id,
+                str($m->name)->limit(22),
+                $m->status,
+                $m->last_checked_at ?? '—',
+                $m->down_since ?? '—',
+                $m->last_down_notified_at ?? '—',
+                $m->down_reminders_sent,
+                $m->isDownReminderDue() ? 'YES' : 'no',
+            ])->all(),
+        );
+    }
+
+    /**
+     * Alert failures are swallowed by design, so the log is the only trace.
+     */
+    protected function swallowedAlertErrors(): void
+    {
+        $path = storage_path('logs/laravel.log');
+        $this->line('<comment>Swallowed alert errors</comment>');
+
+        if (! is_readable($path)) {
+            $this->line('  (no readable log at '.$path.')');
+            $this->newLine();
+
+            return;
+        }
+
+        $hits = array_filter(
+            array_slice(file($path) ?: [], -2000),
+            fn ($line) => str_contains($line, 'Operator alert could not be sent'),
+        );
+
+        if ($hits === []) {
+            $this->line('  none — the Telegram send never threw');
+        }
+
+        foreach (array_slice($hits, -3) as $line) {
+            $this->line('  '.str(trim($line))->limit(300));
+        }
+
+        $this->newLine();
+    }
+
+    protected function resetOutage(Monitor $monitor): void
+    {
+        $monitor->update([
+            'status' => Monitor::STATUS_UP,
+            'down_since' => null,
+            'last_down_notified_at' => null,
+            'down_reminders_sent' => 0,
+        ]);
+
+        $this->info("Reset monitor {$monitor->id} to up — the next check will alert if it is still down.");
+    }
+
+    /**
+     * Send the real alert class, not the simpler telegram:test message.
+     *
+     * Errors stay swallowed here on purpose: this reproduces exactly what a
+     * failing check does, and the log section above is where it surfaces.
+     */
+    protected function fireAlert(OperatorAlerts $alerts, Monitor $monitor): void
+    {
+        $alerts->send(new MonitorStatusAlert($monitor, Monitor::STATUS_DOWN));
+        $this->info("Fired a DOWN alert for monitor {$monitor->id} ({$monitor->name}).");
+        $this->line('If nothing arrives, re-run this command and read the log section.');
+    }
+}
