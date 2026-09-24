@@ -22,6 +22,7 @@ final class DiagnoseMonitorAlerts extends Command
         {filter? : Only monitors whose URL or name contains this}
         {--alert : Send a real DOWN alert for the first match}
         {--probe : Make a live HTTPS request to the Telegram API}
+        {--install-ca : Copy a readable CA bundle into storage so the scheduler can use it}
         {--reset : Clear the outage state so the next check alerts again}';
 
     protected $description = 'Report why monitor outage alerts are or are not going out.';
@@ -114,6 +115,7 @@ final class DiagnoseMonitorAlerts extends Command
         }
 
         $this->line('  running as        : '.$this->processUser());
+        $this->line('  TELEGRAM_CA_BUNDLE: '.$this->configuredBundle());
         $this->candidateBundles();
 
         $basedir = ini_get('open_basedir');
@@ -121,6 +123,10 @@ final class DiagnoseMonitorAlerts extends Command
 
         if ($basedir) {
             $this->warn('  open_basedir is set — the CA bundle must sit inside one of those paths.');
+        }
+
+        if ($this->option('install-ca')) {
+            $this->installCaBundle();
         }
 
         if ($this->option('probe')) {
@@ -170,6 +176,107 @@ final class DiagnoseMonitorAlerts extends Command
                     default => 'READABLE — usable for curl.cainfo',
                 },
             ));
+        }
+    }
+
+    /**
+     * What the Telegram client is told to verify against, if anything.
+     */
+    protected function configuredBundle(): string
+    {
+        $verify = config('services.telegram.http.verify');
+
+        if (! is_string($verify)) {
+            return '(not set — using the system default)';
+        }
+
+        return $verify.'  ['.match (true) {
+            ! file_exists($verify) => 'MISSING',
+            ! is_readable($verify) => 'NOT READABLE',
+            default => 'ok',
+        }.']';
+    }
+
+    /**
+     * Copy a readable system bundle into the project.
+     *
+     * Run from a context that can read the system store; the copy then lives
+     * beside the application, where the scheduler's user can reach it without
+     * anyone needing root to change permissions on /etc.
+     */
+    protected function installCaBundle(): void
+    {
+        $source = collect([
+            '/etc/ssl/certs/ca-certificates.crt',
+            '/etc/pki/tls/certs/ca-bundle.crt',
+            '/etc/ssl/ca-bundle.pem',
+        ])->first(fn (string $path) => is_readable($path));
+
+        if ($source === null) {
+            $this->error('  install-ca: no readable system bundle to copy from.');
+
+            return;
+        }
+
+        $target = storage_path('app/certs/cacert.pem');
+
+        if (! is_dir(dirname($target)) && ! mkdir(dirname($target), 0755, true) && ! is_dir(dirname($target))) {
+            $this->error('  install-ca: could not create '.dirname($target));
+
+            return;
+        }
+
+        if (! copy($source, $target)) {
+            $this->error('  install-ca: copy failed.');
+
+            return;
+        }
+
+        // Explicit, because umask silently narrows both mkdir and copy, and a
+        // bundle another user cannot read is the problem this command exists
+        // to solve.
+        chmod(dirname($target), 0755);
+        chmod($target, 0644);
+
+        $this->info('  install-ca: copied '.$source);
+        $this->reachability($target);
+        $this->info('  install-ca: now add this to .env and re-run with --probe');
+        $this->line('    TELEGRAM_CA_BUNDLE='.$target);
+    }
+
+    /**
+     * Whether every directory on the way to the bundle is traversable.
+     *
+     * A world-readable file under a 0700 parent is unreachable for anyone
+     * else, and the scheduler's user is exactly the "anyone else" that has to
+     * open it. Reporting each step turns a silent failure into a fixable one.
+     */
+    protected function reachability(string $target): void
+    {
+        $parts = explode('/', ltrim(dirname($target), '/'));
+        $path = '';
+        $blocked = false;
+
+        foreach ($parts as $part) {
+            $path .= '/'.$part;
+            $mode = @fileperms($path);
+
+            if ($mode === false) {
+                continue;
+            }
+
+            $octal = substr(sprintf('%o', $mode), -4);
+
+            if (((int) $octal[3] & 1) === 0) {
+                $blocked = true;
+                $this->warn(sprintf('  install-ca: %s is %s — not traversable by other users', $path, $octal));
+            }
+        }
+
+        $this->line(sprintf('  install-ca: bundle mode %s', substr(sprintf('%o', fileperms($target)), -4)));
+
+        if ($blocked) {
+            $this->warn('  install-ca: the scheduler\'s user may still not reach it — widen the directories above, or place the bundle elsewhere.');
         }
     }
 

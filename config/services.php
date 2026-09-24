@@ -47,6 +47,20 @@ return [
     | in users.notify_mode: it is the room that watches everything, not a
     | subscriber.
     */
+    /*
+    | Read by laravel-notification-channels/telegram and merged into the Guzzle
+    | client it builds. TELEGRAM_CA_BUNDLE exists because the CA store is not
+    | always readable by the user the scheduler runs as: cURL then fails with
+    | error 77 and every alert dies silently, while uptime checks carry on
+    | because they pass 'verify' => false. Point it at a bundle that user can
+    | read; leave it unset to use the system default.
+    */
+    'telegram' => [
+        'http' => [
+            'verify' => env('TELEGRAM_CA_BUNDLE', true),
+        ],
+    ],
+
     'telegram-bot-api' => [
         'token' => env('TELEGRAM_BOT_TOKEN'),
         'alert_chat_id' => env('TELEGRAM_ALERT_CHAT_ID'),
