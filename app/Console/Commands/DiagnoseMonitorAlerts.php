@@ -20,6 +20,7 @@ final class DiagnoseMonitorAlerts extends Command
     protected $signature = 'monitor:diagnose
         {filter? : Only monitors whose URL or name contains this}
         {--alert : Send a real DOWN alert for the first match}
+        {--probe : Make a live HTTPS request to the Telegram API}
         {--reset : Clear the outage state so the next check alerts again}';
 
     protected $description = 'Report why monitor outage alerts are or are not going out.';
@@ -27,6 +28,7 @@ final class DiagnoseMonitorAlerts extends Command
     public function handle(OperatorAlerts $alerts): int
     {
         $this->telegramConfig();
+        $this->tlsConfig();
         $this->queueState();
 
         $monitors = $this->monitors();
@@ -68,6 +70,77 @@ final class DiagnoseMonitorAlerts extends Command
             ? 'package loaded'
             : 'MISSING — run composer install'));
         $this->newLine();
+    }
+
+    /**
+     * Where PHP looks for CA certificates, and whether it can actually read it.
+     *
+     * Monitor checks pass 'verify' => false and so never touch this, which is
+     * why uptime checking keeps working while every Telegram send dies with
+     * cURL error 77. On panel-managed hosts the usual cause is an open_basedir
+     * that excludes the bundle rather than a missing file.
+     */
+    protected function tlsConfig(): void
+    {
+        $this->line('<comment>TLS / CA bundle</comment>');
+
+        $defaults = openssl_get_cert_locations();
+        $candidates = [
+            'curl.cainfo' => ini_get('curl.cainfo'),
+            'openssl.cafile' => ini_get('openssl.cafile'),
+            'openssl.capath' => ini_get('openssl.capath'),
+            'default cert file' => $defaults['default_cert_file'] ?? null,
+            'default cert dir' => $defaults['default_cert_dir'] ?? null,
+        ];
+
+        foreach ($candidates as $label => $path) {
+            if ($path === false || $path === null || $path === '') {
+                $this->line(sprintf('  %-18s: (not set)', $label));
+
+                continue;
+            }
+
+            $this->line(sprintf(
+                '  %-18s: %s  [%s]',
+                $label,
+                $path,
+                match (true) {
+                    ! file_exists($path) => 'MISSING',
+                    ! is_readable($path) => 'NOT READABLE',
+                    default => 'ok',
+                },
+            ));
+        }
+
+        $basedir = ini_get('open_basedir');
+        $this->line('  open_basedir      : '.($basedir ?: '(not set)'));
+
+        if ($basedir) {
+            $this->warn('  open_basedir is set — the CA bundle must sit inside one of those paths.');
+        }
+
+        if ($this->option('probe')) {
+            $this->httpsProbe();
+        }
+
+        $this->newLine();
+    }
+
+    /**
+     * Confirm the diagnosis by actually talking to the Telegram API.
+     */
+    protected function httpsProbe(): void
+    {
+        $this->line('  probe             : GET https://api.telegram.org ...');
+
+        try {
+            $status = \Illuminate\Support\Facades\Http::timeout(10)
+                ->get('https://api.telegram.org')
+                ->status();
+            $this->info("  probe result      : HTTP {$status} — TLS works from this process");
+        } catch (\Throwable $e) {
+            $this->error('  probe result      : '.str($e->getMessage())->limit(200));
+        }
     }
 
     protected function queueState(): void
