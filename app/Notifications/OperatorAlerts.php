@@ -41,7 +41,36 @@ final class OperatorAlerts
                 'exception' => $e::class,
                 'reason' => AlertText::redact($e->getMessage()),
                 'at' => $e->getFile().':'.$e->getLine(),
+                'context' => $this->failureContext(),
             ]);
         }
+    }
+
+    /**
+     * The PHP context this send died in.
+     *
+     * A scheduled check and a panel-run command are different processes with
+     * different ini files and different open_basedir, and a CA bundle readable
+     * in one can be off limits in the other — cURL reports the same error 77
+     * either way. Recording the context here is the only way to tell them
+     * apart, because the failing process is never the one being debugged.
+     *
+     * @return array<string, mixed>
+     */
+    protected function failureContext(): array
+    {
+        $bundle = '/etc/ssl/certs/ca-certificates.crt';
+
+        return [
+            'sapi' => PHP_SAPI,
+            'user' => function_exists('posix_geteuid') && function_exists('posix_getpwuid')
+                ? (posix_getpwuid(posix_geteuid())['name'] ?? '?')
+                : get_current_user(),
+            'php_ini' => php_ini_loaded_file() ?: '(none)',
+            'open_basedir' => ini_get('open_basedir') ?: '(not set)',
+            'curl.cainfo' => ini_get('curl.cainfo') ?: '(not set)',
+            'openssl.cafile' => ini_get('openssl.cafile') ?: '(not set)',
+            'bundle_readable' => is_readable($bundle) ? 'yes' : 'NO',
+        ];
     }
 }
