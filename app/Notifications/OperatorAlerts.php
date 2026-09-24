@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Support\AlertText;
 use Illuminate\Notifications\Notification as BaseNotification;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
@@ -32,9 +33,14 @@ final class OperatorAlerts
         try {
             Notification::route('telegram', $chatId)->notify($notification);
         } catch (Throwable $e) {
+            // The message, not the exception object: Telegram puts the bot
+            // token in the request path, so a serialised exception would write
+            // the credential into the log.
             Log::error('Operator alert could not be sent', [
                 'notification' => $notification::class,
-                'exception' => $e,
+                'exception' => $e::class,
+                'reason' => AlertText::redact($e->getMessage()),
+                'at' => $e->getFile().':'.$e->getLine(),
             ]);
         }
     }

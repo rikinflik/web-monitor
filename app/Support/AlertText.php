@@ -19,4 +19,17 @@ final class AlertText
     {
         return htmlspecialchars(Str::limit((string) $raw, $limit), ENT_QUOTES);
     }
+
+    /**
+     * Strip bot tokens out of text headed for a log or a console.
+     *
+     * The Telegram API carries the token in the path, so any failed request
+     * puts it in the exception message. Logs get shipped, pasted into tickets
+     * and read over shoulders; the token is a credential and must not ride
+     * along.
+     */
+    public static function redact(?string $raw): string
+    {
+        return (string) preg_replace('#/bot\d+:[A-Za-z0-9_-]+#', '/bot<redacted>', (string) $raw);
+    }
 }
