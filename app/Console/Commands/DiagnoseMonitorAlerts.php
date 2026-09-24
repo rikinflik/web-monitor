@@ -112,6 +112,9 @@ final class DiagnoseMonitorAlerts extends Command
             ));
         }
 
+        $this->line('  running as        : '.$this->processUser());
+        $this->candidateBundles();
+
         $basedir = ini_get('open_basedir');
         $this->line('  open_basedir      : '.($basedir ?: '(not set)'));
 
@@ -124,6 +127,49 @@ final class DiagnoseMonitorAlerts extends Command
         }
 
         $this->newLine();
+    }
+
+    /**
+     * Who this process runs as.
+     *
+     * The same command can succeed for root and fail for the panel's task
+     * runner when the CA store is not readable by the subscription user, and
+     * that difference is invisible unless it is printed.
+     */
+    protected function processUser(): string
+    {
+        $name = function_exists('posix_geteuid') && function_exists('posix_getpwuid')
+            ? (posix_getpwuid(posix_geteuid())['name'] ?? '?')
+            : get_current_user();
+
+        return sprintf('%s (uid %s)', $name, function_exists('posix_geteuid') ? posix_geteuid() : '?');
+    }
+
+    /**
+     * The usual CA bundle locations, so the fix can be copied from the output.
+     */
+    protected function candidateBundles(): void
+    {
+        $paths = [
+            '/etc/ssl/certs/ca-certificates.crt',
+            '/etc/pki/tls/certs/ca-bundle.crt',
+            '/etc/ssl/ca-bundle.pem',
+            '/usr/local/share/certs/ca-root-nss.crt',
+        ];
+
+        $this->line('  candidate bundles :');
+
+        foreach ($paths as $path) {
+            $this->line(sprintf(
+                '    %-42s %s',
+                $path,
+                match (true) {
+                    ! file_exists($path) => 'missing',
+                    ! is_readable($path) => 'NOT READABLE by this user',
+                    default => 'READABLE — usable for curl.cainfo',
+                },
+            ));
+        }
     }
 
     /**
