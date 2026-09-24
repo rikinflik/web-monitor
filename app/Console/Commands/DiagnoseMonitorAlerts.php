@@ -266,7 +266,9 @@ final class DiagnoseMonitorAlerts extends Command
         foreach (array_slice($hits, -3) as $line) {
             // Keep the exception message and drop the stack trace: cURL states
             // which CAfile and CApath it tried, and that is the whole answer.
-            $message = str(AlertText::redact(trim($line)))->before(' at /')->limit(700);
+            // Generous: the context block sits at the end of the line and is
+            // the point of printing it at all, so it must not be cut off.
+            $message = str(AlertText::redact(trim($line)))->limit(1600);
             $this->line('  '.$message);
             $this->newLine();
         }
