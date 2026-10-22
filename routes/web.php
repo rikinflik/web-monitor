@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AlertController;
 use App\Http\Controllers\MonitorController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicStatusController;
@@ -14,6 +15,8 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('monitors', MonitorController::class);
     Route::resource('seo', SeoCheckController::class)->only(['index', 'create', 'store']);
     Route::post('seo/{seoCheck}/recheck', [SeoCheckController::class, 'recheck'])->name('seo.recheck');
+    Route::get('/alerts', [AlertController::class, 'index'])->name('alerts.index');
+    Route::post('/alerts/check-now', [AlertController::class, 'checkNow'])->name('alerts.check-now');
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::patch('/profile/notifications', [ProfileController::class, 'updateNotifications'])->name('profile.notifications.update');

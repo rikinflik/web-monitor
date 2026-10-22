@@ -18,6 +18,9 @@
                     <x-nav-link :href="route('seo.index')" :active="request()->routeIs('seo.*')">
                         {{ __('SEO / Redirects') }}
                     </x-nav-link>
+                    <x-nav-link :href="route('alerts.index')" :active="request()->routeIs('alerts.*')">
+                        {{ __('Tech Update Alerts') }}
+                    </x-nav-link>
                 </div>
             </div>
 
@@ -75,6 +78,9 @@
             </x-responsive-nav-link>
             <x-responsive-nav-link :href="route('seo.index')" :active="request()->routeIs('seo.*')">
                 {{ __('SEO / Redirects') }}
+            </x-responsive-nav-link>
+            <x-responsive-nav-link :href="route('alerts.index')" :active="request()->routeIs('alerts.*')">
+                {{ __('Tech Update Alerts') }}
             </x-responsive-nav-link>
         </div>
 

@@ -23,6 +23,30 @@ final class AlertFinding extends Model
 {
     use HasFactory;
 
+    public const SEVERITY_CRITICAL = 'critical';
+
+    public const SEVERITY_HIGH = 'high';
+
+    public const SEVERITY_MODERATE = 'moderate';
+
+    public const SEVERITY_LOW = 'low';
+
+    /**
+     * Every declared severity, ordered most to least severe — the
+     * vocabulary GitHub Advisories reports. RSS/Atom sources never report a
+     * severity at all: a null `severity` means "this source does not report
+     * severity", not "harmless", so it is deliberately NOT part of this
+     * list — see severityRank().
+     *
+     * @var list<string>
+     */
+    public const SEVERITIES = [
+        self::SEVERITY_CRITICAL,
+        self::SEVERITY_HIGH,
+        self::SEVERITY_MODERATE,
+        self::SEVERITY_LOW,
+    ];
+
     protected $fillable = [
         'alert_source_id',
         'external_id',
@@ -55,5 +79,18 @@ final class AlertFinding extends Model
     public function alertSource(): BelongsTo
     {
         return $this->belongsTo(AlertSource::class);
+    }
+
+    /**
+     * Rank for sorting findings by severity, most severe first. A null or
+     * unrecognised severity ranks after every declared one — a
+     * display-ordering convenience only, never a claim that an unrated
+     * finding is safer than a declared "low".
+     */
+    public function severityRank(): int
+    {
+        $index = array_search($this->severity, self::SEVERITIES, true);
+
+        return $index === false ? count(self::SEVERITIES) : $index;
     }
 }

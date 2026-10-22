@@ -241,6 +241,15 @@ class AlertCheckServiceTest extends TestCase
         $this->assertStringContainsString('needs attention', $notFoundError);
         $this->assertStringNotContainsString('recover automatically', $notFoundError);
         $this->assertStringNotContainsString('needs attention', $rateLimitedError);
+
+        // The ~120s is the upstream's own retry-after; the next scheduled
+        // check is up to an hour away. Both facts must be present, but never
+        // spliced into one timescale that promises a recovery confirmed
+        // "in ~120s" by a check that will not actually run for another hour.
+        $this->assertStringContainsString('~120s', $rateLimitedError);
+        $this->assertStringContainsString('1 hour', $rateLimitedError);
+        $this->assertStringNotContainsString('~120s on the next scheduled check', $rateLimitedError);
+        $this->assertStringNotContainsString('automatically in ~120s', $rateLimitedError);
     }
 
     // -------------------------------------------------------------------------

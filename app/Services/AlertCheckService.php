@@ -155,6 +155,14 @@ final class AlertCheckService
      * (404, malformed config) — exactly the distinction $e->transient and
      * $e->retryAfterSeconds exist to carry, so an operator reading last_error
      * at 3am does not need to guess which kind of problem woke them.
+     *
+     * The transient branch deliberately keeps two timescales visibly apart:
+     * $e->retryAfterSeconds is the upstream's own retry-after (seconds), but
+     * this check only runs again on the hourly schedule (T4) — splicing them
+     * into one sentence ("expected to recover... in ~120s on the next
+     * scheduled check") would promise a recovery confirmed within seconds
+     * that the system will not actually deliver for up to an hour, leaving
+     * an operator who refreshes two minutes later looking at a stale error.
      */
     private function diagnosticMessage(AlertFeedException $e): string
     {
@@ -162,10 +170,10 @@ final class AlertCheckService
             return "Permanent failure (needs attention): {$e->getMessage()}";
         }
 
-        $retry = $e->retryAfterSeconds !== null
-            ? " in ~{$e->retryAfterSeconds}s"
+        $upstreamRetry = $e->retryAfterSeconds !== null
+            ? "the upstream suggested retrying in ~{$e->retryAfterSeconds}s, but "
             : '';
 
-        return "Transient failure, expected to recover automatically{$retry} on the next scheduled check: {$e->getMessage()}";
+        return "Transient failure, expected to recover automatically; {$upstreamRetry}recovery will only be confirmed here at the next scheduled check (up to 1 hour away): {$e->getMessage()}";
     }
 }
