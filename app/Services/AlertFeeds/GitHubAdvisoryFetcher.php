@@ -60,7 +60,10 @@ final class GitHubAdvisoryFetcher implements AlertFeedFetcher
 
         try {
             $response = Http::timeout(self::TIMEOUT)
-                ->withHeaders(['Accept' => 'application/vnd.github+json'])
+                ->withHeaders([
+                    'Accept' => 'application/vnd.github+json',
+                    'User-Agent' => self::USER_AGENT,
+                ])
                 ->withOptions(['stream' => true])
                 ->get(self::ENDPOINT, [
                     'ecosystem' => $config['ecosystem'],

@@ -172,6 +172,7 @@ final class RssFeedFetcher implements AlertFeedFetcher
     {
         try {
             return Http::timeout(self::TIMEOUT)
+                ->withHeaders(['User-Agent' => self::USER_AGENT])
                 ->withOptions(['allow_redirects' => false, 'stream' => true])
                 ->get($url);
         } catch (Throwable $e) {

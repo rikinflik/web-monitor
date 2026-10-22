@@ -218,6 +218,25 @@ XML;
         $this->assertSame('SA-CORE-2026-016', $findings[0]['external_id']);
     }
 
+    /**
+     * Defect: wordpress.org's WAF returns HTTP 403 for Guzzle's bare default
+     * User-Agent ("GuzzleHttp/7"). Every outbound request must instead carry
+     * an identifying User-Agent naming the application and a contact-ish
+     * identifier, shared with GitHubAdvisoryFetcher via
+     * AlertFeedFetcher::USER_AGENT.
+     */
+    public function test_sends_identifying_user_agent_header(): void
+    {
+        Http::fake(['https://www.drupal.org/security/rss.xml' => Http::response($this->rssFixture(), 200)]);
+
+        (new RssFeedFetcher)->fetch($this->rssSource('https://www.drupal.org/security/rss.xml'));
+
+        Http::assertSent(fn ($request) => $request->hasHeader(
+            'User-Agent',
+            'WebMonitor-AlertBot/1.0 (+https://github.com/rikinflik/web-monitor)'
+        ));
+    }
+
     public function test_request_uses_bounded_timeout(): void
     {
         $capturedTimeout = null;

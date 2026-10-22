@@ -236,6 +236,24 @@ class GitHubAdvisoryFetcherTest extends TestCase
     }
 
     /**
+     * Defect: a bare default client User-Agent gets 403'd by wordpress.org's
+     * WAF. GitHub's public endpoint does not reject the default, but every
+     * outbound request must still identify the application consistently —
+     * shared with RssFeedFetcher via AlertFeedFetcher::USER_AGENT.
+     */
+    public function test_sends_identifying_user_agent_header(): void
+    {
+        Http::fake(['api.github.com/*' => Http::response($this->advisoriesJson(), 200)]);
+
+        (new GitHubAdvisoryFetcher)->fetch($this->githubSource('composer', 'laravel/framework'));
+
+        Http::assertSent(fn ($request) => $request->hasHeader(
+            'User-Agent',
+            'WebMonitor-AlertBot/1.0 (+https://github.com/rikinflik/web-monitor)'
+        ));
+    }
+
+    /**
      * The comma-joined affects string must pass through untouched as a single
      * query value — never exploded into one request per package.
      */
