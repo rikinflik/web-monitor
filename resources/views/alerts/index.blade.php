@@ -77,6 +77,9 @@
                                 </a>
                             </td>
                             <td class="px-3 py-2 whitespace-nowrap">
+                                @if ($finding->is_security)
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Security</span>
+                                @endif
                                 @if ($finding->severity === \App\Models\AlertFinding::SEVERITY_CRITICAL)
                                     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Critical</span>
                                 @elseif ($finding->severity === \App\Models\AlertFinding::SEVERITY_HIGH)

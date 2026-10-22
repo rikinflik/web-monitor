@@ -77,14 +77,21 @@ final class AlertController extends Controller
 
     /**
      * Constrain the eager-loaded `findings` relation to at most
-     * self::FINDINGS_PER_SOURCE rows per source, ranked by severity (most
-     * severe first) then recency — the same ordering intent as
-     * AlertFinding::severityRank(), computed here in SQL via a window
-     * function so the database discards the rows the dashboard never shows
-     * instead of this application hydrating all of them first. A finding
-     * with no published_at ranks last within its own severity tier, since
-     * both MariaDB and SQLite treat NULL as the lowest value in `ORDER BY
-     * ... DESC`.
+     * self::FINDINGS_PER_SOURCE rows per source, ranked by is_security
+     * (flagged findings first), then severity (most severe first), then
+     * recency — the same ordering intent as AlertFinding::severityRank(),
+     * computed here in SQL via a window function so the database discards
+     * the rows the dashboard never shows instead of this application
+     * hydrating all of them first. A finding with no published_at ranks
+     * last within its own severity tier, since both MariaDB and SQLite
+     * treat NULL as the lowest value in `ORDER BY ... DESC`.
+     *
+     * is_security sorts first, ahead of severity and recency, because it is
+     * read from a stored column set at insert (see AlertSecurityClassifier
+     * and AlertCheckService), not computed here: with the cap in play, a
+     * render-time flag would let the current php.net critical advisory fall
+     * off the list within weeks, buried under routine release
+     * announcements that keep accumulating above it.
      *
      * Applied as a `whereIn('id', ...)` subquery rather than a plain
      * `limit()`, since a `limit()` on this eager-load query would cap the
@@ -102,12 +109,13 @@ final class AlertController extends Controller
                         $ranked
                             ->select('id')
                             ->selectRaw(
-                                "ROW_NUMBER() OVER (PARTITION BY alert_source_id ORDER BY {$severityRank}, published_at DESC, id ASC) as rnk"
+                                "ROW_NUMBER() OVER (PARTITION BY alert_source_id ORDER BY is_security DESC, {$severityRank}, published_at DESC, id ASC) as rnk"
                             )
                             ->from('alert_findings');
                     }, 'ranked_findings')
                     ->where('rnk', '<=', self::FINDINGS_PER_SOURCE);
             })
+            ->orderByDesc('is_security')
             ->orderByRaw($severityRank)
             ->orderByDesc('published_at')
             ->orderBy('id');

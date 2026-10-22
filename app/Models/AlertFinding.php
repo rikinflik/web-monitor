@@ -18,6 +18,12 @@ use InvalidArgumentException;
  * empty one — an empty external_id would collapse every id-less item under
  * one source into a single row via the dedup unique key, silently losing
  * genuine advisories.
+ *
+ * `is_security` is decided once at insert (or by the one-off backfill
+ * migration for rows that predate this column) via
+ * AlertSecurityClassifier, never recomputed at render — see that class for
+ * the rule and AlertController for why the dashboard's cap depends on this
+ * being stored rather than computed over only the rows already fetched.
  */
 final class AlertFinding extends Model
 {
@@ -53,11 +59,13 @@ final class AlertFinding extends Model
         'title',
         'url',
         'severity',
+        'is_security',
         'published_at',
         'first_seen_at',
     ];
 
     protected $casts = [
+        'is_security' => 'boolean',
         'published_at' => 'datetime',
         'first_seen_at' => 'datetime',
     ];

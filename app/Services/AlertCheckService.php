@@ -7,6 +7,7 @@ use App\Services\AlertFeeds\AlertFeedException;
 use App\Services\AlertFeeds\AlertFeedFetcher;
 use App\Services\AlertFeeds\GitHubAdvisoryFetcher;
 use App\Services\AlertFeeds\RssFeedFetcher;
+use App\Support\AlertSecurityClassifier;
 use Illuminate\Database\UniqueConstraintViolationException;
 use InvalidArgumentException;
 
@@ -106,7 +107,9 @@ final class AlertCheckService
     }
 
     /**
-     * Insert one finding, tolerating a UniqueConstraintViolationException
+     * Insert one finding, classifying it via AlertSecurityClassifier at
+     * insert time (never computed later at render) and tolerating a
+     * UniqueConstraintViolationException
      * raised by a concurrent check racing the same (alert_source_id,
      * external_id) pair between the existence check above and this insert —
      * the row exists either way, so there is nothing left to do.
@@ -119,6 +122,7 @@ final class AlertCheckService
                 'title' => $finding['title'],
                 'url' => $finding['url'],
                 'severity' => $finding['severity'],
+                'is_security' => AlertSecurityClassifier::isSecurity($source, $finding['title']),
                 'published_at' => $finding['published_at'],
                 'first_seen_at' => now(),
             ]);

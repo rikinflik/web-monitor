@@ -352,4 +352,72 @@ class AlertCheckServiceTest extends TestCase
         $again = $original->fresh();
         $this->assertTrue($originalFirstSeenAt->equalTo($again->first_seen_at));
     }
+
+    // -------------------------------------------------------------------------
+    // Security classification at insert (T5c) — AlertCheckService must set
+    // is_security via AlertSecurityClassifier at insert time, never leave it
+    // at the column default for a real finding.
+    // -------------------------------------------------------------------------
+
+    /**
+     * A security_only source (e.g. drupal's dedicated security feed) must
+     * flag every inserted finding regardless of its title — no text
+     * inspection at all for these sources.
+     */
+    public function test_a_security_only_source_flags_every_inserted_finding_regardless_of_title(): void
+    {
+        $source = $this->rssSource([
+            'security_only' => true,
+            'config' => ['url' => 'https://example.test/security.atom'],
+        ]);
+
+        Http::fake(['https://example.test/security.atom' => Http::response(
+            $this->atomFeed([
+                ['id' => 'https://example.test/n1', 'title' => 'Routine maintenance notice'],
+            ]),
+            200
+        )]);
+
+        $this->service()->check($source);
+
+        $this->assertDatabaseHas('alert_findings', [
+            'alert_source_id' => $source->id,
+            'external_id' => 'https://example.test/n1',
+            'is_security' => true,
+        ]);
+    }
+
+    /**
+     * A non-security-only source (php) is classified per-item on title: the
+     * real critical advisory title is flagged, a routine release title is
+     * not.
+     */
+    public function test_a_non_security_only_source_classifies_each_finding_by_title(): void
+    {
+        $source = $this->rssSource(['security_only' => false]);
+
+        Http::fake(['https://www.php.net/feed.atom' => Http::response(
+            $this->atomFeed([
+                [
+                    'id' => 'https://www.php.net/advisory-2026-10-21',
+                    'title' => 'Security advisory: Critical remote code execution vulnerabilities, update now',
+                ],
+                ['id' => 'https://www.php.net/release-8.5.12', 'title' => 'PHP 8.5.12 Released!'],
+            ]),
+            200
+        )]);
+
+        $this->service()->check($source);
+
+        $this->assertDatabaseHas('alert_findings', [
+            'alert_source_id' => $source->id,
+            'external_id' => 'https://www.php.net/advisory-2026-10-21',
+            'is_security' => true,
+        ]);
+        $this->assertDatabaseHas('alert_findings', [
+            'alert_source_id' => $source->id,
+            'external_id' => 'https://www.php.net/release-8.5.12',
+            'is_security' => false,
+        ]);
+    }
 }

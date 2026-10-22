@@ -247,6 +247,130 @@ class AlertControllerTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Security ordering (T5c) — AC: security findings sort above the rest
+    // within a source's cap, even when newer non-security findings exist.
+    // The stored, indexed is_security flag (not a render-time computation)
+    // is what makes this possible once the cap is in play.
+    // -------------------------------------------------------------------------
+
+    /**
+     * Same severity (both unrated) and the non-security item is strictly
+     * MORE recent: under the pre-T5c ordering (severity then recency only)
+     * the newer non-security item would render first. This fails if the
+     * is_security ordering key is ever dropped from the query.
+     */
+    public function test_a_security_finding_sorts_above_a_newer_non_security_finding(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_USER]);
+        $source = AlertSource::where('key', 'php')->firstOrFail();
+
+        AlertFinding::factory()->create([
+            'alert_source_id' => $source->id,
+            'title' => 'Older Security Finding',
+            'is_security' => true,
+            'severity' => null,
+            'published_at' => now()->subDays(5),
+        ]);
+        AlertFinding::factory()->create([
+            'alert_source_id' => $source->id,
+            'title' => 'Newer Non-Security Finding',
+            'is_security' => false,
+            'severity' => null,
+            'published_at' => now(),
+        ]);
+
+        $html = $this->actingAs($user)->get(route('alerts.index'))->getContent();
+
+        $security = strpos($html, 'Older Security Finding');
+        $nonSecurity = strpos($html, 'Newer Non-Security Finding');
+
+        $this->assertNotFalse($security);
+        $this->assertNotFalse($nonSecurity);
+        $this->assertLessThan($nonSecurity, $security);
+    }
+
+    /**
+     * The cap itself must respect the security-first ordering: three older
+     * security findings plus ten newer non-security findings (13 total,
+     * cap 10) must keep all three security findings and drop the three
+     * OLDEST non-security ones, not the security findings.
+     */
+    public function test_cap_keeps_security_findings_over_newer_non_security_ones(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_USER]);
+        $source = AlertSource::where('key', 'laravel')->firstOrFail();
+
+        for ($i = 1; $i <= 3; $i++) {
+            AlertFinding::factory()->create([
+                'alert_source_id' => $source->id,
+                'external_id' => "security-{$i}",
+                'title' => 'Security Finding '.sprintf('%02d', $i),
+                'is_security' => true,
+                'severity' => null,
+                'published_at' => Carbon::parse('2026-01-01')->addDays($i),
+            ]);
+        }
+
+        for ($i = 1; $i <= 10; $i++) {
+            AlertFinding::factory()->create([
+                'alert_source_id' => $source->id,
+                'external_id' => "non-security-{$i}",
+                'title' => 'Non-Security Finding '.sprintf('%02d', $i),
+                'is_security' => false,
+                'severity' => null,
+                'published_at' => Carbon::parse('2026-06-01')->addDays($i),
+            ]);
+        }
+
+        $response = $this->actingAs($user)->get(route('alerts.index'));
+        $response->assertOk();
+
+        $loadedFindings = $response->viewData('sources')->firstWhere('key', 'laravel')->findings;
+        $this->assertCount(10, $loadedFindings);
+
+        for ($i = 1; $i <= 3; $i++) {
+            $response->assertSee('Security Finding '.sprintf('%02d', $i));
+        }
+
+        // The 3 oldest non-security findings must be dropped by the cap.
+        for ($i = 1; $i <= 3; $i++) {
+            $response->assertDontSee('Non-Security Finding '.sprintf('%02d', $i));
+        }
+        for ($i = 4; $i <= 10; $i++) {
+            $response->assertSee('Non-Security Finding '.sprintf('%02d', $i));
+        }
+    }
+
+    /**
+     * The table must mark security findings visibly, reusing existing
+     * badge/pill styling rather than inventing a new one.
+     */
+    public function test_a_security_finding_shows_a_security_badge_and_a_non_security_finding_does_not(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_USER]);
+        $source = AlertSource::where('key', 'wordpress')->firstOrFail();
+
+        AlertFinding::factory()->create([
+            'alert_source_id' => $source->id,
+            'title' => 'Flagged WordPress Advisory',
+            'is_security' => true,
+        ]);
+        AlertFinding::factory()->create([
+            'alert_source_id' => $source->id,
+            'title' => 'Unflagged WordPress Item',
+            'is_security' => false,
+        ]);
+
+        $response = $this->actingAs($user)->get(route('alerts.index'));
+
+        $response->assertOk();
+        $response->assertSee('Security');
+        // Exactly one "Security" badge: it must not leak onto the
+        // non-security row.
+        $this->assertSame(1, substr_count($response->getContent(), '>Security<'));
+    }
+
+    // -------------------------------------------------------------------------
     // Findings cap — AC: the dashboard must not render every finding a
     // source has ever had (php.net/feed.atom alone produced 495 in a real
     // run). The cap is enforced in the query, so the loaded collection
