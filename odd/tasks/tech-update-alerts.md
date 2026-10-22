@@ -86,7 +86,7 @@ see it — the PHP interpreter is not a Composer-managed dependency.
   identifying User-Agent (wordpress.org's WAF 403s the default one) and cap the dashboard at 10
   findings per source in the query (php returned 495 on one run) · Route: delegated · Trigger:
   multi-file write (7 files)
-- [ ] T5c — Flag security findings rather than filtering them (user decision, 2026-10-22,
+- [x] T5c — Flag security findings rather than filtering them (user decision, 2026-10-22,
   option 3 of 3). Five of the six feeds are security-only by construction (drupal's
   `/security/rss.xml`, wordpress's security category, and all three GitHub Advisories sources);
   only php.net's general news feed needs a keyword heuristic. The flag MUST be a stored,
@@ -94,7 +94,7 @@ see it — the PHP interpreter is not a Composer-managed dependency.
   would let the current PHP critical advisory fall off the list within weeks, buried under
   release announcements — invisible exactly when it matters · AC: security findings sort above
   the rest within the cap, the 495 existing rows are backfilled, and a test proves a security
-  item outranks newer non-security ones
+  item outranks newer non-security ones · Route: delegated · Trigger: multi-file write (12 files)
 - [ ] T6 — Token-gated public overview: `config/monitoring.php` token, `PublicOverviewController`,
   `GET /overview/{token}` with `throttle:30,1`, Blade view of DOWN monitors + recent findings ·
   AC: correct token is 200 showing a down monitor but not an up one; wrong and empty-configured
@@ -191,6 +191,20 @@ see it — the PHP interpreter is not a Composer-managed dependency.
   original state was restored, the browser closed and the artifacts deleted.
 - First real end-to-end run (`alerts:check` + `queue:work --stop-when-empty`): php 495, drupal
   50, wordpress 10, laravel 27, vue 1, angular 20 findings, all with `last_error` null.
+
+- T5c `Live: performed` — observed at /alerts as a temporary admin (created then deleted).
+  PHP's card, "Showing 10 of 495 findings", renders its four security items first with a red
+  "Security" pill — the 2026-10-21 critical advisory at the very top — above the release posts,
+  including one security item from a year ago outranking yesterday's release notes. That last
+  row is the proof the stored flag was the right call: a render-time flag could not have
+  surfaced it. Browser closed, artifacts deleted, temp user removed.
+- Backfill verified by the parent's own query: php 4/495 flagged, drupal 50/50, wordpress
+  10/10, laravel 27/27, vue 1/1, angular 20/20.
+- Debt recorded: `AlertSourceSeeder` now carries a `Schema::hasColumn` check because the first
+  migration invokes it before later columns exist. Deliberately left specific to
+  `security_only` rather than made generic — a generic column filter would silently swallow a
+  mistyped key, which fails quietly instead of loudly. Each future `alert_sources` column will
+  need the same treatment plus a re-seed in its own migration.
 
 ## Review boundary
 - Last reviewed boundary: `e91ce3d` (T3, reviewed `medium`/readability, remediated).
