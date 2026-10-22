@@ -67,10 +67,11 @@ see it — the PHP interpreter is not a Composer-managed dependency.
   prevention and real-feed fixture quirks · AC: full suite green, every defect covered by a test
   that fails when its behaviour is broken, sabotage-proven where the code was already correct ·
   Route: delegated · Trigger: multi-file write (5 files)
-- [ ] T3 — `AlertCheckService::check(AlertSource)` (dedup-insert, update `last_checked_at`,
+- [x] T3 — `AlertCheckService::check(AlertSource)` (dedup-insert, update `last_checked_at`,
   record `last_success_at`/`last_error`) and `CheckAlertSourceJob` · AC: a test proves a second
   check over the same feed plus one new item inserts exactly one row, and that a failing fetch
-  records `last_error` without wiping prior findings
+  records `last_error` without wiping prior findings · Route: delegated · Trigger: multi-file
+  write (4 files)
 - [ ] T4 — `alerts:check` Artisan command dispatching the job per source, registered hourly in
   `routes/console.php` · AC: `artisan('alerts:check')` with `Queue::fake()` asserts the job
   pushed exactly 6 times
