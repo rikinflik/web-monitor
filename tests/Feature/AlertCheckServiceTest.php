@@ -128,10 +128,19 @@ class AlertCheckServiceTest extends TestCase
     {
         $source = AlertSource::factory()->create(['kind' => 'carrier-pigeon']);
 
-        $this->expectException(InvalidArgumentException::class);
+        // Caught rather than declared via expectException(): under that helper
+        // the throwing call ends the test method, so a no-fetch assertion
+        // placed after it would never run and the second half of this test's
+        // name would go unverified.
+        $thrown = null;
 
-        $this->service()->check($source);
+        try {
+            $this->service()->check($source);
+        } catch (InvalidArgumentException $e) {
+            $thrown = $e;
+        }
 
+        $this->assertInstanceOf(InvalidArgumentException::class, $thrown);
         Http::assertNothingSent();
     }
 
