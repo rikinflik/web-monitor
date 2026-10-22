@@ -26,3 +26,17 @@ Schedule::call(function () {
         CheckSeoJob::dispatch($seoCheck);
     });
 })->cron('0 6,10,14 * * *')->timezone('Europe/Madrid');
+
+// Alert checks run hourly, their own block fully decoupled from the Monitor
+// per-minute loop and the SEO thrice-daily block above. This feature exists
+// so a critical security advisory for one of the six tracked ecosystems is
+// never missed, which favors a frequent, fixed cadence over cost. Hourly is
+// also load-bearing for correctness, not just freshness: AlertCheckService
+// deliberately does NOT retry a failed feed fetch within the job (see its
+// class docblock) because three of the six sources share a single
+// unauthenticated GitHub Advisories budget of 60 requests/hour, and retrying
+// inside the same ~10-second backoff window would burn that shared budget on
+// guaranteed repeat failures instead of waiting out whatever caused them.
+// This hourly run IS the retry — the next scheduled check gives a transient
+// failure time to clear at zero extra request cost.
+Schedule::command('alerts:check')->hourly();
