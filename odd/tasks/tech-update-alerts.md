@@ -72,13 +72,29 @@ see it — the PHP interpreter is not a Composer-managed dependency.
   check over the same feed plus one new item inserts exactly one row, and that a failing fetch
   records `last_error` without wiping prior findings · Route: delegated · Trigger: multi-file
   write (4 files)
-- [ ] T4 — `alerts:check` Artisan command dispatching the job per source, registered hourly in
+- [x] T4 — `alerts:check` Artisan command dispatching the job per source, registered hourly in
   `routes/console.php` · AC: `artisan('alerts:check')` with `Queue::fake()` asserts the job
-  pushed exactly 6 times
-- [ ] T5 — `AlertController@index` + `@checkNow` (admin-only, synchronous), routes, the
-  `alerts/index` Blade dashboard, nav tabs, post-login landing · AC: authenticated GET
-  `/alerts` is 200 and lists the six sources; non-admin check-now is 403, admin's succeeds;
-  dashboard observed rendering in the running app
+  pushed exactly 6 times · Route: delegated · Trigger: multi-file write (4 files)
+- [x] T5 — `AlertController@index` + `@checkNow` (admin-only, synchronous), routes, the
+  `alerts/index` Blade dashboard, nav tabs · AC: authenticated GET `/alerts` is 200 and lists
+  the six sources; non-admin check-now is 403, admin's succeeds; dashboard observed rendering
+  in the running app · Route: delegated · Trigger: multi-file write (8 files)
+  — post-login landing deliberately NOT changed: altering where every user lands is a change
+  to existing behaviour nobody asked for; `/alerts` is reachable from the nav tab and is what
+  the user points their browser at.
+- [x] T5b — Two defects found by the first real run, invisible to faked-response tests: send an
+  identifying User-Agent (wordpress.org's WAF 403s the default one) and cap the dashboard at 10
+  findings per source in the query (php returned 495 on one run) · Route: delegated · Trigger:
+  multi-file write (7 files)
+- [ ] T5c — Flag security findings rather than filtering them (user decision, 2026-10-22,
+  option 3 of 3). Five of the six feeds are security-only by construction (drupal's
+  `/security/rss.xml`, wordpress's security category, and all three GitHub Advisories sources);
+  only php.net's general news feed needs a keyword heuristic. The flag MUST be a stored,
+  indexed column set at insert, not computed at render: with a 10-row cap, a render-time flag
+  would let the current PHP critical advisory fall off the list within weeks, buried under
+  release announcements — invisible exactly when it matters · AC: security findings sort above
+  the rest within the cap, the 495 existing rows are backfilled, and a test proves a security
+  item outranks newer non-security ones
 - [ ] T6 — Token-gated public overview: `config/monitoring.php` token, `PublicOverviewController`,
   `GET /overview/{token}` with `throttle:30,1`, Blade view of DOWN monitors + recent findings ·
   AC: correct token is 200 showing a down monitor but not an up one; wrong and empty-configured
@@ -161,6 +177,27 @@ see it — the PHP interpreter is not a Composer-managed dependency.
     `<channel>`-less path as a visible signal.
   - There is no CI at all (`.github/workflows/` absent), so every contract pinned here holds
     only as long as someone runs the suite locally.
+
+## Evidence (live)
+- T5 `Live: performed` — logged into https://webmonitor.ddev.site/alerts via playwright-cli as
+  a temporary admin (created for the check, deleted after; the dev DB's own accounts were not
+  touched). Observed: `/alerts` redirects to `/login` when unauthenticated; after login all six
+  sources render with correct caps ("Showing 10 of 495", "10 of 50", "10 of 27", "10 of 20",
+  "10 of 10"); the real php.net critical advisory of 2026-10-21 is present on the page; severity
+  pills render Critical/High/Low/Unrated; the nav tab sits beside Monitors and SEO / Redirects.
+  Failure state verified by temporarily setting `vue` to failed and reloading: 5 "Healthy" vs 1
+  "Check failing", showing the error text and "Last successful check: 3 days ago" against
+  "Checked 3 minutes ago" — the dead-feed/quiet-week distinction working end to end. Vue's
+  original state was restored, the browser closed and the artifacts deleted.
+- First real end-to-end run (`alerts:check` + `queue:work --stop-when-empty`): php 495, drupal
+  50, wordpress 10, laravel 27, vue 1, angular 20 findings, all with `last_error` null.
+
+## Review boundary
+- Last reviewed boundary: `e91ce3d` (T3, reviewed `medium`/readability, remediated).
+- **Deferred and still unreviewed:** T4's commit (`medium`, 183 lines, under budget). Per the
+  deferral rule it accumulates rather than buying its own round — it MUST be included in the
+  next classified set at slice close (budget reached, or the feature ending). Do not let the
+  session end with this unreviewed.
 
 ## Next step
 T1b remediation and T2 fetchers run in parallel; then re-run the suite and the classifier.
