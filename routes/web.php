@@ -3,6 +3,7 @@
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\MonitorController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PublicOverviewController;
 use App\Http\Controllers\PublicStatusController;
 use App\Http\Controllers\SeoCheckController;
 use Illuminate\Support\Facades\Route;
@@ -28,6 +29,15 @@ Route::middleware(['auth'])->group(function () {
 
 Route::get('/status/{token}', [PublicStatusController::class, 'show'])
     ->name('public.status')
+    ->middleware('throttle:30,1');
+
+// Separate from /status/{token} above: that page is per-monitor and opt-in
+// via the monitor's own token, this one is global — a single site-wide token
+// gates a page listing every monitor currently down plus the tracked
+// technology alerts. See PublicOverviewController for the 404-on-empty-token
+// guard.
+Route::get('/overview/{token}', [PublicOverviewController::class, 'show'])
+    ->name('public.overview')
     ->middleware('throttle:30,1');
 
 require __DIR__.'/auth.php';
