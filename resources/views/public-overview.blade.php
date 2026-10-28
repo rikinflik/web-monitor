@@ -23,11 +23,11 @@
     --}}
     @vite(['resources/css/app.css'])
 </head>
-<body class="bg-gray-100 min-h-screen py-10 px-4">
-    <div class="max-w-3xl mx-auto space-y-6">
+<body class="bg-gray-100 min-h-screen py-4 px-4">
+    <div class="max-w-7xl mx-auto space-y-4">
 
         <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-            <div class="p-6 border-b border-gray-100">
+            <div class="px-6 py-4 border-b border-gray-100">
                 <h1 class="text-2xl font-bold text-gray-800">Status Overview</h1>
                 <p class="text-sm text-gray-500 mt-1">Monitors currently down and recent technology alerts.</p>
             </div>

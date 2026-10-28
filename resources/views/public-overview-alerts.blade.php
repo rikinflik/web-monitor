@@ -12,12 +12,19 @@
       recent findings per source" prose.
 --}}
 <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-    <div class="p-6 border-b border-gray-100">
+    <div class="px-6 py-3 border-b border-gray-100">
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Technology Alerts</h2>
         <p class="text-xs text-gray-400 mt-1">Showing the {{ $findingsPerSource }} most recent findings per source, security-flagged findings first.</p>
     </div>
 
-    <div class="p-6 space-y-6">
+    {{--
+        Grid, not a vertical stack: six stacked cards pushed the whole page
+        well past one screen on a wide display while leaving most of the
+        width empty. This page is meant to be a browser home page answering
+        "is anything on fire" at a glance, so fitting without scrolling is
+        the point. Falls back to one column on narrow screens.
+    --}}
+    <div class="p-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         @foreach ($sources as $source)
             <div class="border border-gray-200 rounded-lg p-4">
                 <div class="flex items-center justify-between mb-2">
@@ -58,9 +65,12 @@
                                 target="_blank"
                                 rel="noreferrer noopener"
                                 class="text-indigo-600 hover:text-indigo-900 truncate mr-3"
+                                title="{{ $finding->title }}"
                             >{{ $finding->title }}</a>
                             @else
-                            <span class="truncate mr-3">{{ $finding->title }}</span>
+                            {{-- Narrow grid columns truncate hard, so carry the full
+                                 title in the tooltip rather than losing it. --}}
+                            <span class="truncate mr-3" title="{{ $finding->title }}">{{ $finding->title }}</span>
                             @endif
                             <span class="shrink-0 flex items-center space-x-1">
                                 @if ($finding->is_security)

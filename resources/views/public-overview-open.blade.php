@@ -17,8 +17,8 @@
     --}}
     @vite(['resources/css/app.css'])
 </head>
-<body class="bg-gray-100 min-h-screen py-10 px-4">
-    <div class="max-w-3xl mx-auto space-y-6">
+<body class="bg-gray-100 min-h-screen py-4 px-4">
+    <div class="max-w-7xl mx-auto space-y-4">
 
         {{--
             T8: this card is deliberately the ONLY place $downMonitorCount is
@@ -29,12 +29,12 @@
             equivalent block above.
         --}}
         <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-            <div class="p-6 border-b border-gray-100">
+            <div class="px-6 py-4 border-b border-gray-100">
                 <h1 class="text-2xl font-bold text-gray-800">Status Overview</h1>
                 <p class="text-sm text-gray-500 mt-1">A summary of current status and recent technology alerts.</p>
             </div>
 
-            <div class="p-6 space-y-4">
+            <div class="px-6 py-4 flex items-center gap-4">
                 @if ($downMonitorCount === 0)
                     <div class="rounded-lg bg-green-50 border border-green-200 text-green-800 px-4 py-3 text-sm font-medium">
                         Totes les webs estan actives. Res a reportar.
