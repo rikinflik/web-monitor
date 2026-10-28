@@ -14,6 +14,13 @@ composer_version: "2"
 web_environment: []
 corepack_enable: false
 
+# Performance mode for this project. Pinned explicitly so the project does not
+# depend on whatever `performance_mode` happens to be set in the global config.
+# The sync rules themselves stay in DDEV's generated
+# .ddev/mutagen/mutagen.yml (DDEV v1.25.4 rewrites that file on every
+# `ddev start`, so customising it does not persist).
+performance_mode: mutagen
+
 # Key features of DDEV's config.yaml:
 
 # name: <projectname> # Name of the project, automatically provides
