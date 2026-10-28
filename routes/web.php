@@ -42,4 +42,13 @@ Route::get('/overview/{token}', [PublicOverviewController::class, 'show'])
     ->name('public.overview')
     ->middleware('throttle:30,1');
 
+// T8: open (no token, no login) counterpart to /overview/{token} above —
+// distinct literal path, so it cannot collide with the {token} segment
+// route regardless of declaration order. Renders the alerts in full but
+// only a down-monitor COUNT, never a monitor's name or URL — see
+// PublicOverviewController::open().
+Route::get('/overview', [PublicOverviewController::class, 'open'])
+    ->name('public.overview.open')
+    ->middleware('throttle:30,1');
+
 require __DIR__.'/auth.php';

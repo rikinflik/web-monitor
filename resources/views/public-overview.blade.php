@@ -62,72 +62,7 @@
             </div>
         </div>
 
-        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-            <div class="p-6 border-b border-gray-100">
-                <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Technology Alerts</h2>
-                <p class="text-xs text-gray-400 mt-1">Showing the {{ $findingsPerSource }} most recent findings per source, security-flagged findings first.</p>
-            </div>
-
-            <div class="p-6 space-y-6">
-                @foreach ($sources as $source)
-                    <div class="border border-gray-200 rounded-lg p-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <h3 class="text-base font-semibold text-gray-900">{{ $source->name }}</h3>
-                            <div class="flex items-center space-x-2">
-                                @php($healthBadge = $source->healthBadge())
-                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {{ $healthBadge['classes'] }}">{{ $healthBadge['label'] }}</span>
-                                {{-- Without this, a month-dead source and one checked a minute ago
-                                     were pixel-identical here — this page previously rendered no
-                                     timestamp at all, unlike the authenticated dashboard. --}}
-                                <span class="text-xs text-gray-400">
-                                    Checked {{ $source->last_checked_at?->diffForHumans() ?? 'never' }}
-                                </span>
-                            </div>
-                        </div>
-
-                        @if ($source->last_error)
-                            <div class="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
-                                <p>{{ $source->last_error }}</p>
-                                <p class="text-xs text-red-500 mt-1">
-                                    Last successful check: {{ $source->last_success_at?->diffForHumans() ?? 'never' }}
-                                </p>
-                            </div>
-                        @endif
-
-                        @if ($source->findings_count > 0)
-                            <p class="text-xs text-gray-500 mb-2">
-                                Showing {{ $source->findings->count() }} of {{ $source->findings_count }} finding{{ $source->findings_count === 1 ? '' : 's' }}
-                            </p>
-                        @endif
-
-                        <ul class="space-y-2">
-                            @forelse ($source->findings as $finding)
-                                <li class="flex items-center justify-between text-sm">
-                                    @if ($finding->safeUrl())
-                                    <a
-                                        href="{{ $finding->safeUrl() }}"
-                                        target="_blank"
-                                        rel="noreferrer noopener"
-                                        class="text-indigo-600 hover:text-indigo-900 truncate mr-3"
-                                    >{{ $finding->title }}</a>
-                                    @else
-                                    <span class="truncate mr-3">{{ $finding->title }}</span>
-                                    @endif
-                                    <span class="shrink-0 flex items-center space-x-1">
-                                        @if ($finding->is_security)
-                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Security</span>
-                                        @endif
-                                        <span class="text-xs text-gray-400">{{ $finding->published_at?->diffForHumans() ?? 'Unknown date' }}</span>
-                                    </span>
-                                </li>
-                            @empty
-                                <li class="text-sm text-gray-500">No findings recorded yet.</li>
-                            @endforelse
-                        </ul>
-                    </div>
-                @endforeach
-            </div>
-        </div>
+        @include('public-overview-alerts', ['sources' => $sources, 'findingsPerSource' => $findingsPerSource])
 
         <p class="text-center text-xs text-gray-400">Powered by WebMonitor</p>
     </div>

@@ -129,6 +129,29 @@ class PublicOverviewTest extends TestCase
     }
 
     /**
+     * T8: this page has never rendered a severity pill, only the Security
+     * flag — mirrors AlertController's dashboard, which derives its pill
+     * from AlertFinding::severityBadge().
+     */
+    public function test_severity_pill_renders_alongside_the_security_flag(): void
+    {
+        $source = AlertSource::factory()->create(['name' => 'PHP']);
+        AlertFinding::factory()->for($source, 'alertSource')->create([
+            // Deliberately a title that does NOT contain the word "Critical"
+            // itself — otherwise assertSee('Critical') below would pass on
+            // the title text alone, proving nothing about the pill.
+            'title' => 'A Noteworthy Advisory',
+            'severity' => AlertFinding::SEVERITY_CRITICAL,
+            'is_security' => true,
+        ]);
+
+        $response = $this->get(route('public.overview', self::TOKEN));
+
+        $response->assertSee('>Critical<', false);
+        $response->assertSee('Security');
+    }
+
+    /**
      * T7b defect 1: mirrors AlertControllerTest's equivalent on this surface
      * — a finding whose url carries an unsafe scheme must never render as a
      * clickable href on the public (token-gated, no-login) page either.
