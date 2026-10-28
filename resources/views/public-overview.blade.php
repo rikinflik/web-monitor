@@ -26,40 +26,47 @@
 <body class="bg-gray-100 min-h-screen py-4 px-4">
     <div class="max-w-7xl mx-auto space-y-4">
 
-        <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-100">
-                <h1 class="text-2xl font-bold text-gray-800">Status Overview</h1>
-                <p class="text-sm text-gray-500 mt-1">Monitors currently down and recent technology alerts.</p>
-            </div>
-
-            <div class="p-6">
-                <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Down Monitors</h2>
-
+        <div class="bg-white shadow-lg rounded-lg px-6 py-3 space-y-3">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <h1 class="text-lg font-bold text-gray-800 mr-auto">Status Overview</h1>
                 @if ($downMonitors->isEmpty())
-                    <div class="rounded-lg bg-green-50 border border-green-200 text-green-800 px-4 py-3 text-sm font-medium">
-                        All monitors are currently up. Nothing to report.
-                    </div>
+                    <span class="rounded-full bg-green-100 text-green-800 px-3 py-1 text-sm font-semibold">
+                        Totes les webs actives
+                    </span>
                 @else
-                    <div class="space-y-3">
-                        @foreach ($downMonitors as $monitor)
-                            <div class="flex items-center justify-between p-3 rounded-lg bg-red-50 border border-red-100">
-                                <div>
-                                    <p class="font-semibold text-gray-800">{{ $monitor->name }}</p>
-                                    <a
-                                        href="{{ $monitor->url }}"
-                                        target="_blank"
-                                        rel="noreferrer noopener"
-                                        class="text-xs text-gray-500 hover:text-gray-700 break-all"
-                                    >{{ $monitor->url }}</a>
-                                </div>
-                                <span class="shrink-0 ml-4 px-3 py-1 rounded-full bg-red-500 text-white text-xs font-bold">
-                                    DOWN{{ $monitor->outageDuration() ? ' · '.$monitor->outageDuration() : '' }}
-                                </span>
-                            </div>
-                        @endforeach
-                    </div>
+                    <span class="rounded-full bg-red-100 text-red-800 px-3 py-1 text-sm font-semibold">
+                        {{ $downMonitors->count() }} web{{ $downMonitors->count() === 1 ? '' : 's' }} caigud{{ $downMonitors->count() === 1 ? 'a' : 'es' }}
+                    </span>
                 @endif
             </div>
+
+            {{--
+                Compact grid rather than one full-width box per monitor: the
+                down list is the smaller half of this page and was eating the
+                height the alert cards need. Names and URLs still render here
+                — this is the token-gated page, unlike public-overview-open.
+            --}}
+            @unless ($downMonitors->isEmpty())
+                <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    @foreach ($downMonitors as $monitor)
+                        <div class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-red-50 border border-red-100">
+                            <div class="min-w-0">
+                                <p class="font-semibold text-sm text-gray-800 truncate" title="{{ $monitor->name }}">{{ $monitor->name }}</p>
+                                <a
+                                    href="{{ $monitor->url }}"
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                    class="block text-xs text-gray-500 hover:text-gray-700 truncate"
+                                    title="{{ $monitor->url }}"
+                                >{{ $monitor->url }}</a>
+                            </div>
+                            <span class="shrink-0 px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-bold">
+                                DOWN{{ $monitor->outageDuration() ? ' · '.$monitor->outageDuration() : '' }}
+                            </span>
+                        </div>
+                    @endforeach
+                </div>
+            @endunless
         </div>
 
         @include('public-overview-alerts', ['sources' => $sources, 'findingsPerSource' => $findingsPerSource])

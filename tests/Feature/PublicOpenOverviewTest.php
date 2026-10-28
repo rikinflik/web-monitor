@@ -65,7 +65,7 @@ class PublicOpenOverviewTest extends TestCase
         Monitor::factory()->create(['status' => Monitor::STATUS_UP]);
 
         $this->get(route('public.overview.open'))
-            ->assertSee('Totes les webs estan actives');
+            ->assertSee('Totes les webs actives');
     }
 
     public function test_login_button_links_to_the_login_route(): void

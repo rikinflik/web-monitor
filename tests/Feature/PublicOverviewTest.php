@@ -102,7 +102,7 @@ class PublicOverviewTest extends TestCase
         Monitor::factory()->create(['status' => 'up']);
 
         $this->get(route('public.overview', self::TOKEN))
-            ->assertSee('All monitors are currently up');
+            ->assertSee('Totes les webs actives');
     }
 
     public function test_response_carries_noindex_and_no_referrer_headers(): void
