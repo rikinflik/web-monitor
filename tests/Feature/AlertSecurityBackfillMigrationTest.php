@@ -6,6 +6,7 @@ use App\Models\AlertFinding;
 use App\Models\AlertSource;
 use Database\Seeders\AlertSourceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
@@ -81,6 +82,59 @@ class AlertSecurityBackfillMigrationTest extends TestCase
 
         $this->migrationInstance()->backfillIsSecurity();
 
+        $this->assertTrue($advisory->fresh()->is_security);
+        $this->assertFalse($release->fresh()->is_security);
+    }
+
+    // -------------------------------------------------------------------------
+    // T7b defect 4: up() must be re-runnable after it has already been
+    // applied. On MariaDB, DDL auto-commits — if up() died part-way through
+    // the row-by-row backfill, the `migrations` table row is never written,
+    // yet both columns already exist, and the next `artisan migrate` would
+    // die on a duplicate-column error with no re-entry path.
+    // -------------------------------------------------------------------------
+
+    /**
+     * RefreshDatabase has already run this migration once for every test in
+     * this suite, so calling up() again here exercises exactly the
+     * already-applied path a re-run after a partial failure would hit.
+     */
+    public function test_up_is_safely_re_runnable_once_already_applied(): void
+    {
+        $this->migrationInstance()->up();
+
+        $this->assertTrue(Schema::hasColumn('alert_sources', 'security_only'));
+        $this->assertTrue(Schema::hasColumn('alert_findings', 'is_security'));
+        $this->assertTrue(Schema::hasIndex('alert_findings', 'alert_findings_source_security_index'));
+    }
+
+    /**
+     * backfillIsSecurity() recomputes is_security from title on every call
+     * (via AlertSecurityClassifier), rather than e.g. only touching rows
+     * where the column is still at its default — verify that recomputation
+     * is genuinely idempotent before a re-run of up() is allowed to rely on
+     * it: running it twice must leave the same findings flagged the same
+     * way, not toggle or duplicate anything.
+     */
+    public function test_backfill_is_idempotent_across_repeated_calls(): void
+    {
+        $php = AlertSource::where('key', 'php')->firstOrFail();
+
+        $advisory = AlertFinding::factory()->create([
+            'alert_source_id' => $php->id,
+            'external_id' => 'https://www.php.net/advisory-2026-10-21',
+            'title' => 'Security advisory: Critical remote code execution vulnerabilities, update now',
+        ]);
+        $release = AlertFinding::factory()->create([
+            'alert_source_id' => $php->id,
+            'external_id' => 'https://www.php.net/release-8.5.12',
+            'title' => 'PHP 8.5.12 Released!',
+        ]);
+
+        $this->migrationInstance()->backfillIsSecurity();
+        $this->migrationInstance()->backfillIsSecurity();
+
+        $this->assertSame(2, AlertFinding::query()->where('alert_source_id', $php->id)->count());
         $this->assertTrue($advisory->fresh()->is_security);
         $this->assertFalse($release->fresh()->is_security);
     }

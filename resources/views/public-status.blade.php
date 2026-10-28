@@ -4,7 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Estado de {{ $monitor->name }}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    {{--
+        Compiled locally via Vite, not loaded from cdn.tailwindcss.com. Two
+        reasons, both load-bearing:
+        - This page's URL carries the monitor's own public_token secret. A
+          third-party script executing in-page can read window.location.href
+          and exfiltrate it.
+        - This page is consulted precisely when things are broken, and
+          cdn.tailwindcss.com is a JIT dev CDN: if it is blocked or down the
+          page renders unstyled, losing the ONLINE/OFFLINE colour coding that
+          carries the entire message.
+        Only the CSS bundle is pulled in: this page is static/non-interactive
+        (no Alpine x-data, no DataTables usage here), so app.js would add
+        jQuery/Alpine/DataTables weight for zero behavioural benefit.
+    --}}
+    @vite(['resources/css/app.css'])
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen">
     <div class="max-w-xl w-full bg-white shadow-lg rounded-lg overflow-hidden">

@@ -760,6 +760,73 @@ XML;
         $this->assertSame('https://www.php.net/archive/2026.php#id2026-10-22-1', $findings[0]['url']);
     }
 
+    /**
+     * T7b defect 1: a feed-supplied item link reaches a Blade href="{{ }}"
+     * sink verbatim (resources/views/alerts/index.blade.php and
+     * public-overview.blade.php). Blade's auto-escaping stops attribute
+     * breakout but not a javascript:/data: scheme, which executes in the
+     * viewer's own origin. Unlike assertHttpScheme() (which rejects the
+     * *source's own* configured feed URL before ever issuing a request),
+     * this is an item-level link: the item itself still carries a real
+     * external_id/title worth recording, so the unsafe link is blanked
+     * rather than dropping the whole entry.
+     */
+    public function test_atom_entry_with_javascript_scheme_link_is_stored_with_a_blanked_url(): void
+    {
+        $atom = <<<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>PHP: Hypertext Preprocessor</title>
+  <entry>
+    <id>https://www.php.net/archive/2026.php#malicious</id>
+    <title>Malicious Link Advisory</title>
+    <link rel="alternate" href="javascript:alert(document.cookie)"/>
+    <published>2026-10-21T00:00:00+00:00</published>
+  </entry>
+</feed>
+XML;
+
+        Http::fake(['https://www.php.net/feed.atom' => Http::response($atom, 200)]);
+
+        $findings = (new RssFeedFetcher)->fetch($this->rssSource('https://www.php.net/feed.atom'));
+
+        $this->assertCount(1, $findings);
+        $this->assertSame('https://www.php.net/archive/2026.php#malicious', $findings[0]['external_id']);
+        $this->assertSame('Malicious Link Advisory', $findings[0]['title']);
+        $this->assertSame('', $findings[0]['url']);
+    }
+
+    /**
+     * T7b defect 1: same guard for the RSS 2.0 (<item><link>) shape, and
+     * proving the guid-derived external_id survives untouched — only the
+     * rendered `url` field is blanked, never the dedup identity.
+     */
+    public function test_rss_item_with_javascript_scheme_link_is_stored_with_a_blanked_url(): void
+    {
+        $rss = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+  <title>Drupal.org security advisories</title>
+  <item>
+    <title>Malicious Link Item</title>
+    <link>javascript:alert(1)</link>
+    <guid isPermaLink="false">SA-MALICIOUS-001</guid>
+    <pubDate>Wed, 21 Oct 2026 14:00:00 +0000</pubDate>
+  </item>
+</channel>
+</rss>
+XML;
+
+        Http::fake(['https://www.drupal.org/security/rss.xml' => Http::response($rss, 200)]);
+
+        $findings = (new RssFeedFetcher)->fetch($this->rssSource('https://www.drupal.org/security/rss.xml'));
+
+        $this->assertCount(1, $findings);
+        $this->assertSame('SA-MALICIOUS-001', $findings[0]['external_id']);
+        $this->assertSame('', $findings[0]['url']);
+    }
+
     public function test_invalid_scheme_throws_without_sending_request(): void
     {
         Http::fake();

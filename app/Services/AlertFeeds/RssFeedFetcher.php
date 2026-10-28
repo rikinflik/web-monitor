@@ -3,6 +3,7 @@
 namespace App\Services\AlertFeeds;
 
 use App\Models\AlertSource;
+use App\Support\SanitizesFeedUrls;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -19,6 +20,8 @@ use Throwable;
  */
 final class RssFeedFetcher implements AlertFeedFetcher
 {
+    use SanitizesFeedUrls;
+
     /**
      * Per-request timeout in seconds, mirroring SeoCheckService::TIMEOUT.
      */
@@ -374,13 +377,13 @@ final class RssFeedFetcher implements AlertFeedFetcher
             $href = (string) $link['href'];
 
             if ($rel === '' || $rel === 'alternate') {
-                return $href;
+                return $this->sanitizeItemUrl($href);
             }
 
             $fallback = $fallback === '' ? $href : $fallback;
         }
 
-        return $fallback;
+        return $this->sanitizeItemUrl($fallback);
     }
 
     /**
@@ -399,9 +402,12 @@ final class RssFeedFetcher implements AlertFeedFetcher
             $guid = trim((string) $item->guid);
 
             $items[] = [
+                // external_id is derived from the raw (unsanitized) link —
+                // dedup identity must stay stable regardless of whether the
+                // link is safe to render; only the stored `url` is sanitized.
                 'external_id' => $guid !== '' ? $guid : $link,
                 'title' => trim((string) $item->title),
-                'url' => $link,
+                'url' => $this->sanitizeItemUrl($link),
                 'date' => (string) $item->pubDate,
             ];
         }

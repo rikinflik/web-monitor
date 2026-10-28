@@ -2,11 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AlertFinding;
 use App\Models\AlertSource;
 use App\Models\Monitor;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Query\Builder as QueryBuilder;
+use App\Support\ConstrainsFindingsPerSource;
 use Illuminate\Http\Response;
 
 /**
@@ -32,6 +30,8 @@ use Illuminate\Http\Response;
  */
 final class PublicOverviewController extends Controller
 {
+    use ConstrainsFindingsPerSource;
+
     /**
      * How many of a source's most recent findings this page renders —
      * tighter than the authenticated dashboard's cap (AlertController::
@@ -70,61 +70,11 @@ final class PublicOverviewController extends Controller
             ->orderBy('name')
             ->get();
 
+        $findingsPerSource = self::FINDINGS_PER_SOURCE;
+
         return response()
-            ->view('public-overview', compact('downMonitors', 'sources'))
+            ->view('public-overview', compact('downMonitors', 'sources', 'findingsPerSource'))
             ->header('X-Robots-Tag', 'noindex, nofollow')
             ->header('Referrer-Policy', 'no-referrer');
-    }
-
-    /**
-     * Constrain the eager-loaded `findings` relation to at most
-     * self::FINDINGS_PER_SOURCE rows per source, ranked is_security first,
-     * then severity (most severe first), then recency — the same ordering
-     * approach as AlertController::constrainToRecentPerSource(), computed
-     * in SQL via a window function so the database discards the rows this
-     * page never shows rather than this application hydrating all of them
-     * first.
-     */
-    private function constrainToRecentPerSource(HasMany $query): void
-    {
-        $severityRank = $this->severityRankSql();
-
-        $query
-            ->whereIn('id', function (QueryBuilder $recentIds) use ($severityRank): void {
-                $recentIds
-                    ->select('id')
-                    ->fromSub(function (QueryBuilder $ranked) use ($severityRank): void {
-                        $ranked
-                            ->select('id')
-                            ->selectRaw(
-                                "ROW_NUMBER() OVER (PARTITION BY alert_source_id ORDER BY is_security DESC, {$severityRank}, published_at DESC, id ASC) as rnk"
-                            )
-                            ->from('alert_findings');
-                    }, 'ranked_findings')
-                    ->where('rnk', '<=', self::FINDINGS_PER_SOURCE);
-            })
-            ->orderByDesc('is_security')
-            ->orderByRaw($severityRank)
-            ->orderByDesc('published_at')
-            ->orderBy('id');
-    }
-
-    /**
-     * Build a SQL `CASE` expression ranking `severity` exactly like
-     * AlertFinding::severityRank() (most severe first, unrated last),
-     * generated from AlertFinding::SEVERITIES so the SQL and PHP orderings
-     * cannot drift apart.
-     */
-    private function severityRankSql(): string
-    {
-        $cases = [];
-
-        foreach (AlertFinding::SEVERITIES as $index => $severity) {
-            $cases[] = "WHEN '{$severity}' THEN {$index}";
-        }
-
-        $unratedRank = count(AlertFinding::SEVERITIES);
-
-        return 'CASE severity '.implode(' ', $cases)." ELSE {$unratedRank} END";
     }
 }

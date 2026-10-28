@@ -5,7 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
     <title>Status Overview</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    {{--
+        Compiled locally via Vite, not loaded from cdn.tailwindcss.com. Two
+        reasons, both load-bearing:
+        - This page's URL is the only secret (/overview/{token}). A
+          third-party script executing in-page can read window.location.href
+          and exfiltrate the token — the one leak channel the deliberate
+          Referrer-Policy: no-referrer + rel="noreferrer noopener" hardening
+          in PublicOverviewController does not close.
+        - This page is consulted precisely when things are broken, and
+          cdn.tailwindcss.com is a JIT dev CDN: if it is blocked or down the
+          page renders unstyled, losing the DOWN/Healthy colour coding that
+          carries the entire message.
+        Only the CSS bundle is pulled in: this page is static/non-interactive
+        (no Alpine x-data, no DataTables usage here), so app.js would add
+        jQuery/Alpine/DataTables weight for zero behavioural benefit.
+    --}}
+    @vite(['resources/css/app.css'])
 </head>
 <body class="bg-gray-100 min-h-screen py-10 px-4">
     <div class="max-w-3xl mx-auto space-y-6">
@@ -49,7 +65,7 @@
         <div class="bg-white shadow-lg rounded-lg overflow-hidden">
             <div class="p-6 border-b border-gray-100">
                 <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Technology Alerts</h2>
-                <p class="text-xs text-gray-400 mt-1">Showing the 5 most recent findings per source, security-flagged findings first.</p>
+                <p class="text-xs text-gray-400 mt-1">Showing the {{ $findingsPerSource }} most recent findings per source, security-flagged findings first.</p>
             </div>
 
             <div class="p-6 space-y-6">
@@ -58,13 +74,14 @@
                         <div class="flex items-center justify-between mb-2">
                             <h3 class="text-base font-semibold text-gray-900">{{ $source->name }}</h3>
                             <div class="flex items-center space-x-2">
-                                @if ($source->last_error)
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Check failing</span>
-                                @elseif ($source->last_checked_at)
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Healthy</span>
-                                @else
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">Never checked</span>
-                                @endif
+                                @php($healthBadge = $source->healthBadge())
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {{ $healthBadge['classes'] }}">{{ $healthBadge['label'] }}</span>
+                                {{-- Without this, a month-dead source and one checked a minute ago
+                                     were pixel-identical here — this page previously rendered no
+                                     timestamp at all, unlike the authenticated dashboard. --}}
+                                <span class="text-xs text-gray-400">
+                                    Checked {{ $source->last_checked_at?->diffForHumans() ?? 'never' }}
+                                </span>
                             </div>
                         </div>
 
@@ -86,12 +103,16 @@
                         <ul class="space-y-2">
                             @forelse ($source->findings as $finding)
                                 <li class="flex items-center justify-between text-sm">
+                                    @if ($finding->safeUrl())
                                     <a
-                                        href="{{ $finding->url }}"
+                                        href="{{ $finding->safeUrl() }}"
                                         target="_blank"
                                         rel="noreferrer noopener"
                                         class="text-indigo-600 hover:text-indigo-900 truncate mr-3"
                                     >{{ $finding->title }}</a>
+                                    @else
+                                    <span class="truncate mr-3">{{ $finding->title }}</span>
+                                    @endif
                                     <span class="shrink-0 flex items-center space-x-1">
                                         @if ($finding->is_security)
                                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Security</span>

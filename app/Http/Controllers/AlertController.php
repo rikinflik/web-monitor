@@ -3,13 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\CheckAlertSourceJob;
-use App\Models\AlertFinding;
 use App\Models\AlertSource;
 use App\Models\User;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Query\Builder as QueryBuilder;
+use App\Support\ConstrainsFindingsPerSource;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 /**
@@ -25,6 +24,8 @@ use Illuminate\View\View;
  */
 final class AlertController extends Controller
 {
+    use ConstrainsFindingsPerSource;
+
     /**
      * How many of a source's most recent findings the dashboard renders.
      * Some sources carry a feed's entire history rather than just recent
@@ -68,75 +69,45 @@ final class AlertController extends Controller
     {
         abort_if($request->user()->role !== User::ROLE_ADMIN, 403);
 
-        AlertSource::all()->each(
-            fn (AlertSource $source) => CheckAlertSourceJob::dispatchSync($source)
-        );
+        $sources = AlertSource::all();
 
-        return redirect()->route('alerts.index')->with('success', 'Check completed for all sources.');
+        $sources->each(fn (AlertSource $source) => CheckAlertSourceJob::dispatchSync($source));
+
+        [$flashKey, $message] = $this->summarizeCheckOutcome($sources->map->fresh());
+
+        return redirect()->route('alerts.index')->with($flashKey, $message);
     }
 
     /**
-     * Constrain the eager-loaded `findings` relation to at most
-     * self::FINDINGS_PER_SOURCE rows per source, ranked by is_security
-     * (flagged findings first), then severity (most severe first), then
-     * recency — the same ordering intent as AlertFinding::severityRank(),
-     * computed here in SQL via a window function so the database discards
-     * the rows the dashboard never shows instead of this application
-     * hydrating all of them first. A finding with no published_at ranks
-     * last within its own severity tier, since both MariaDB and SQLite
-     * treat NULL as the lowest value in `ORDER BY ... DESC`.
+     * Build an operator-facing flash that reflects what checkNow() actually
+     * did, rather than a hardcoded success string: AlertCheckService::check()
+     * swallows every per-source AlertFeedException into last_error and
+     * returns normally (see its class docblock), so re-reading each source's
+     * freshly-recorded last_error after the synchronous run is the only way
+     * to tell a real outcome here — this is the operator's confirmation
+     * signal after a manual recovery attempt, so it must carry information
+     * rather than always looking identical.
      *
-     * is_security sorts first, ahead of severity and recency, because it is
-     * read from a stored column set at insert (see AlertSecurityClassifier
-     * and AlertCheckService), not computed here: with the cap in play, a
-     * render-time flag would let the current php.net critical advisory fall
-     * off the list within weeks, buried under routine release
-     * announcements that keep accumulating above it.
-     *
-     * Applied as a `whereIn('id', ...)` subquery rather than a plain
-     * `limit()`, since a `limit()` on this eager-load query would cap the
-     * combined result across every source, not per source.
+     * @param  Collection<int, AlertSource>  $refreshedSources
+     * @return array{0: string, 1: string} the session flash key
+     *                                     ('success'|'error') and its message
      */
-    private function constrainToRecentPerSource(HasMany $query): void
+    private function summarizeCheckOutcome(Collection $refreshedSources): array
     {
-        $severityRank = $this->severityRankSql();
+        $failed = $refreshedSources->filter(fn (AlertSource $source) => $source->last_error !== null);
 
-        $query
-            ->whereIn('id', function (QueryBuilder $recentIds) use ($severityRank): void {
-                $recentIds
-                    ->select('id')
-                    ->fromSub(function (QueryBuilder $ranked) use ($severityRank): void {
-                        $ranked
-                            ->select('id')
-                            ->selectRaw(
-                                "ROW_NUMBER() OVER (PARTITION BY alert_source_id ORDER BY is_security DESC, {$severityRank}, published_at DESC, id ASC) as rnk"
-                            )
-                            ->from('alert_findings');
-                    }, 'ranked_findings')
-                    ->where('rnk', '<=', self::FINDINGS_PER_SOURCE);
-            })
-            ->orderByDesc('is_security')
-            ->orderByRaw($severityRank)
-            ->orderByDesc('published_at')
-            ->orderBy('id');
-    }
-
-    /**
-     * Build a SQL `CASE` expression ranking `severity` exactly like
-     * AlertFinding::severityRank() (most severe first, unrated last),
-     * generated from AlertFinding::SEVERITIES so the SQL and PHP orderings
-     * cannot drift apart.
-     */
-    private function severityRankSql(): string
-    {
-        $cases = [];
-
-        foreach (AlertFinding::SEVERITIES as $index => $severity) {
-            $cases[] = "WHEN '{$severity}' THEN {$index}";
+        if ($failed->isEmpty()) {
+            return ['success', sprintf(
+                'Check completed successfully for all %d sources.',
+                $refreshedSources->count()
+            )];
         }
 
-        $unratedRank = count(AlertFinding::SEVERITIES);
-
-        return 'CASE severity '.implode(' ', $cases)." ELSE {$unratedRank} END";
+        return ['error', sprintf(
+            '%d of %d source checks failed: %s.',
+            $failed->count(),
+            $refreshedSources->count(),
+            $failed->pluck('name')->implode(', ')
+        )];
     }
 }

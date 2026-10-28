@@ -128,6 +128,121 @@ class AlertSourceTest extends TestCase
         $this->assertDatabaseCount('alert_sources', 6);
     }
 
+    // -------------------------------------------------------------------------
+    // Staleness (T7e) — distinguishes "checked recently" from "the pipeline
+    // is dead". The schedule is hourly (routes/console.php:
+    // Schedule::command('alerts:check')->hourly()), so
+    // AlertSource::STALE_AFTER_HOURS = 3 gives roughly three missed runs of
+    // slack before a quiet source is flagged — enough to absorb a single
+    // delayed/overlapping run without false-alarming, while still catching a
+    // genuinely dead queue worker or cron well before "Healthy" has been
+    // silently wrong for days.
+    // -------------------------------------------------------------------------
+
+    public function test_is_stale_returns_false_for_a_source_checked_within_the_threshold(): void
+    {
+        $source = AlertSource::factory()
+            ->checkedAt(now()->subHours(AlertSource::STALE_AFTER_HOURS)->addMinute())
+            ->create();
+
+        $this->assertFalse($source->isStale());
+    }
+
+    public function test_is_stale_returns_true_for_a_source_checked_before_the_threshold(): void
+    {
+        $source = AlertSource::factory()
+            ->checkedAt(now()->subHours(AlertSource::STALE_AFTER_HOURS)->subMinute())
+            ->create();
+
+        $this->assertTrue($source->isStale());
+    }
+
+    /**
+     * Sabotage-proof the exact boundary: one second inside the threshold
+     * must not be stale, one second past it must be — pins the ">" vs ">="
+     * choice rather than just "somewhere around 3 hours".
+     */
+    public function test_is_stale_boundary_is_exclusive_of_the_threshold_itself(): void
+    {
+        $justInside = AlertSource::factory()
+            ->checkedAt(now()->subHours(AlertSource::STALE_AFTER_HOURS)->addSecond())
+            ->create();
+        $justOutside = AlertSource::factory()
+            ->checkedAt(now()->subHours(AlertSource::STALE_AFTER_HOURS)->subSecond())
+            ->create();
+
+        $this->assertFalse($justInside->isStale(), 'A source checked one second inside the threshold must not be stale.');
+        $this->assertTrue($justOutside->isStale(), 'A source checked one second past the threshold must be stale.');
+    }
+
+    public function test_is_stale_returns_false_for_a_source_that_has_never_been_checked(): void
+    {
+        $source = AlertSource::factory()->checkedAt(null)->create();
+
+        $this->assertFalse($source->isStale(), 'A never-checked source is "Never checked", not "Stale" — isStale() must not conflate the two.');
+    }
+
+    // -------------------------------------------------------------------------
+    // healthBadge() — precedence between Check failing / Stale / Healthy /
+    // Never checked, the single place both Blade views derive their status
+    // pill from (mirrors AlertFinding::severityBadge()'s role for severity).
+    // -------------------------------------------------------------------------
+
+    public function test_health_badge_is_never_checked_when_last_checked_at_is_null(): void
+    {
+        $source = AlertSource::factory()->checkedAt(null)->create();
+
+        $this->assertSame('Never checked', $source->healthBadge()['label']);
+    }
+
+    public function test_health_badge_is_healthy_when_checked_recently_with_no_error(): void
+    {
+        $source = AlertSource::factory()->checkedAt(now())->create();
+
+        $this->assertSame('Healthy', $source->healthBadge()['label']);
+    }
+
+    public function test_health_badge_is_stale_when_checked_before_the_threshold_with_no_error(): void
+    {
+        $source = AlertSource::factory()
+            ->checkedAt(now()->subHours(AlertSource::STALE_AFTER_HOURS)->subMinute())
+            ->create();
+
+        $this->assertSame('Stale', $source->healthBadge()['label']);
+    }
+
+    /**
+     * Precedence: a source that is both stale AND failing must render
+     * "Check failing", not "Stale" — a concrete, known failure reason
+     * outranks mere staleness, and showing both would be incoherent (which
+     * one is "the" status?). last_error already implies a check WAS
+     * attempted (however long ago), so this is the more informative of the
+     * two truths.
+     */
+    public function test_health_badge_prefers_check_failing_over_stale_when_both_apply(): void
+    {
+        $source = AlertSource::factory()
+            ->checkedAt(now()->subHours(AlertSource::STALE_AFTER_HOURS)->subDay())
+            ->create(['last_error' => 'Connection timed out after 10s']);
+
+        $this->assertSame('Check failing', $source->healthBadge()['label']);
+    }
+
+    /**
+     * Precedence: last_error must win over a recent (non-stale) check too —
+     * the existing contract AlertControllerTest already pins at the Blade
+     * level, re-asserted here at the model level since healthBadge() is now
+     * the single source of truth both views render from.
+     */
+    public function test_health_badge_prefers_check_failing_over_healthy(): void
+    {
+        $source = AlertSource::factory()
+            ->checkedAt(now())
+            ->create(['last_error' => 'HTTP 403 from wordpress.org']);
+
+        $this->assertSame('Check failing', $source->healthBadge()['label']);
+    }
+
     public function test_alert_source_tracks_last_success_and_last_error_independently_of_last_checked(): void
     {
         $source = AlertSource::factory()->create();

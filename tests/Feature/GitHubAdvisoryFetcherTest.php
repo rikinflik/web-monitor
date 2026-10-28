@@ -209,6 +209,90 @@ class GitHubAdvisoryFetcherTest extends TestCase
         $this->assertSame('GHSA-xxxx-yyyy-zzzz', $findings[0]['external_id']);
     }
 
+    // -------------------------------------------------------------------------
+    // T7a: severity normalization at the fetcher boundary — see
+    // AlertFinding::normalizeSeverity(). The REST `GET /advisories` endpoint
+    // this fetcher calls returns `unknown | low | medium | high | critical`,
+    // never GraphQL's `moderate`, and case is not guaranteed — this is the
+    // boundary that must close all three (vocabulary, alias, case).
+    // -------------------------------------------------------------------------
+
+    /**
+     * Defect T7a: a feed emitting mixed-case severity must be normalized to
+     * lowercase before it is ever stored — otherwise the ranking SQL's
+     * case-sensitive `CASE severity WHEN 'critical' ...` match disagrees
+     * between SQLite (case-sensitive) and MariaDB (case-insensitive).
+     */
+    public function test_mixed_case_severity_is_normalized_to_lowercase(): void
+    {
+        $items = $this->advisoriesJson();
+        $items[0]['severity'] = 'Critical';
+
+        Http::fake(['api.github.com/*' => Http::response($items, 200)]);
+
+        $findings = (new GitHubAdvisoryFetcher)->fetch($this->githubSource('composer', 'laravel/framework'));
+
+        $this->assertSame('critical', $findings[0]['severity']);
+    }
+
+    /**
+     * Defect T7a: GitHub's GraphQL `SecurityAdvisorySeverity` enum spells
+     * this severity `moderate`; the REST endpoint this fetcher actually
+     * calls spells it `medium`. Accept `moderate` as an input alias,
+     * normalized to the canonical `medium` before storage.
+     */
+    public function test_moderate_severity_is_normalized_to_medium(): void
+    {
+        $items = $this->advisoriesJson();
+        $items[0]['severity'] = 'moderate';
+
+        Http::fake(['api.github.com/*' => Http::response($items, 200)]);
+
+        $findings = (new GitHubAdvisoryFetcher)->fetch($this->githubSource('composer', 'laravel/framework'));
+
+        $this->assertSame('medium', $findings[0]['severity']);
+    }
+
+    /**
+     * Defect T7a: GitHub's REST endpoint itself reports `unknown` for an
+     * unrated advisory. Storing it verbatim would render a real-looking
+     * label that silently ranks last (below "low") instead of honestly
+     * showing "Unrated" — it must degrade to null, like any other
+     * unrecognized severity string.
+     */
+    public function test_github_unknown_severity_degrades_to_null(): void
+    {
+        $items = $this->advisoriesJson();
+        $items[0]['severity'] = 'unknown';
+
+        Http::fake(['api.github.com/*' => Http::response($items, 200)]);
+
+        $findings = (new GitHubAdvisoryFetcher)->fetch($this->githubSource('composer', 'laravel/framework'));
+
+        $this->assertNull($findings[0]['severity']);
+    }
+
+    /**
+     * T7b defect 1: html_url reaches a Blade href="{{ }}" sink verbatim.
+     * Blade's auto-escaping stops attribute breakout but not a
+     * javascript:/data: scheme, which executes in the viewer's own origin.
+     * The item is kept (external_id/title/severity are still worth
+     * recording) with only its url blanked — mirrors RssFeedFetcher's
+     * equivalent guard via the shared SanitizesFeedUrls trait.
+     */
+    public function test_html_url_with_javascript_scheme_is_stored_with_a_blanked_url(): void
+    {
+        $items = $this->advisoriesJson();
+        $items[0]['html_url'] = 'javascript:alert(document.cookie)';
+
+        Http::fake(['api.github.com/*' => Http::response($items, 200)]);
+
+        $findings = (new GitHubAdvisoryFetcher)->fetch($this->githubSource('composer', 'laravel/framework'));
+
+        $this->assertSame('GHSA-jh5r-qr3c-85q8', $findings[0]['external_id']);
+        $this->assertSame('', $findings[0]['url']);
+    }
+
     public function test_request_uses_bounded_timeout(): void
     {
         $capturedTimeout = null;

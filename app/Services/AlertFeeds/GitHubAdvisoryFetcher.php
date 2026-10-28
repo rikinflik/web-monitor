@@ -2,7 +2,9 @@
 
 namespace App\Services\AlertFeeds;
 
+use App\Models\AlertFinding;
 use App\Models\AlertSource;
+use App\Support\SanitizesFeedUrls;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -16,6 +18,8 @@ use Throwable;
  */
 final class GitHubAdvisoryFetcher implements AlertFeedFetcher
 {
+    use SanitizesFeedUrls;
+
     private const ENDPOINT = 'https://api.github.com/advisories';
 
     /**
@@ -277,9 +281,16 @@ final class GitHubAdvisoryFetcher implements AlertFeedFetcher
             $findings[] = [
                 'external_id' => $externalId,
                 'title' => (string) ($item['summary'] ?? ''),
-                'url' => (string) ($item['html_url'] ?? ''),
+                'url' => $this->sanitizeItemUrl((string) ($item['html_url'] ?? '')),
                 'published_at' => $this->parseDate($item['published_at'] ?? null),
-                'severity' => isset($item['severity']) ? (string) $item['severity'] : null,
+                // Normalized at this boundary (see AlertFinding::normalizeSeverity())
+                // so what gets stored is always lowercase, alias-resolved, and
+                // either a declared SEVERITIES value or null — never GitHub's own
+                // "unknown", and never a case variant that a case-sensitive
+                // ranking CASE expression could fail to match.
+                'severity' => AlertFinding::normalizeSeverity(
+                    isset($item['severity']) ? (string) $item['severity'] : null
+                ),
             ];
         }
 

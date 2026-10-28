@@ -7,6 +7,7 @@ use App\Models\AlertFinding;
 use App\Models\AlertSource;
 use App\Models\Monitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -82,7 +83,7 @@ class PublicOverviewTest extends TestCase
 
     public function test_down_monitor_is_shown(): void
     {
-        $monitor = Monitor::factory()->down()->create(['name' => 'Down Service']);
+        Monitor::factory()->down()->create(['name' => 'Down Service']);
 
         $this->get(route('public.overview', self::TOKEN))
             ->assertSee('Down Service');
@@ -90,7 +91,7 @@ class PublicOverviewTest extends TestCase
 
     public function test_up_monitor_is_not_shown(): void
     {
-        $monitor = Monitor::factory()->create(['name' => 'Up Service', 'status' => 'up']);
+        Monitor::factory()->create(['name' => 'Up Service', 'status' => 'up']);
 
         $this->get(route('public.overview', self::TOKEN))
             ->assertDontSee('Up Service');
@@ -127,6 +128,27 @@ class PublicOverviewTest extends TestCase
         $response->assertSee('https://php.net/advisory/1', false);
     }
 
+    /**
+     * T7b defect 1: mirrors AlertControllerTest's equivalent on this surface
+     * — a finding whose url carries an unsafe scheme must never render as a
+     * clickable href on the public (token-gated, no-login) page either.
+     */
+    public function test_a_finding_with_a_javascript_scheme_url_does_not_render_a_dangerous_href(): void
+    {
+        $source = AlertSource::factory()->create(['name' => 'PHP']);
+
+        AlertFinding::factory()->for($source, 'alertSource')->create([
+            'title' => 'Finding With Dangerous Link',
+            'url' => 'javascript:alert(document.cookie)',
+        ]);
+
+        $response = $this->get(route('public.overview', self::TOKEN));
+
+        $response->assertOk();
+        $response->assertSee('Finding With Dangerous Link');
+        $response->assertDontSee('href="javascript:', false);
+    }
+
     public function test_failing_alert_source_is_visible(): void
     {
         AlertSource::factory()->create([
@@ -138,6 +160,71 @@ class PublicOverviewTest extends TestCase
         $this->get(route('public.overview', self::TOKEN))
             ->assertSee('Check failing')
             ->assertSee('HTTP 403 from wordpress.org');
+    }
+
+    // -------------------------------------------------------------------------
+    // Staleness (T7e) — same contract as AlertControllerTest's equivalent,
+    // pinned on this surface too since the public page previously rendered
+    // no staleness signal at all.
+    // -------------------------------------------------------------------------
+
+    public function test_a_source_checked_before_the_staleness_threshold_renders_stale_not_healthy(): void
+    {
+        AlertSource::factory()->create([
+            'name' => 'WordPress',
+            'last_checked_at' => now()->subHours(AlertSource::STALE_AFTER_HOURS)->subMinute(),
+        ]);
+
+        $response = $this->get(route('public.overview', self::TOKEN));
+
+        $response->assertOk();
+        $response->assertSee('Stale');
+        $response->assertDontSee('>Healthy<', false);
+    }
+
+    public function test_a_source_checked_within_the_staleness_threshold_still_renders_healthy(): void
+    {
+        AlertSource::factory()->create([
+            'name' => 'WordPress',
+            'last_checked_at' => now()->subHours(AlertSource::STALE_AFTER_HOURS)->addMinute(),
+        ]);
+
+        $response = $this->get(route('public.overview', self::TOKEN));
+
+        $response->assertOk();
+        $response->assertSee('Healthy');
+        $response->assertDontSee('Stale');
+    }
+
+    /**
+     * Precedence pin at the rendered-page level, mirroring AlertControllerTest's
+     * equivalent: stale + failing must render "Check failing", not "Stale".
+     */
+    public function test_a_source_that_is_both_stale_and_failing_renders_check_failing_not_stale(): void
+    {
+        AlertSource::factory()->create([
+            'name' => 'WordPress',
+            'last_checked_at' => now()->subHours(AlertSource::STALE_AFTER_HOURS)->subDay(),
+            'last_error' => 'Connection timed out after 10s',
+        ]);
+
+        $response = $this->get(route('public.overview', self::TOKEN));
+
+        $response->assertOk();
+        $response->assertSee('Check failing');
+        $response->assertDontSee('Stale');
+    }
+
+    /**
+     * T7d: this page's URL is the secret (/overview/{token}); a third-party
+     * script running in-page could read window.location.href and exfiltrate
+     * the token, which the Referrer-Policy/rel="noreferrer" hardening does
+     * not close. It must compile locally via Vite instead.
+     */
+    public function test_page_does_not_load_tailwind_from_a_cdn(): void
+    {
+        $this->get(route('public.overview', self::TOKEN))
+            ->assertDontSee('cdn.tailwindcss.com', false);
     }
 
     public function test_route_is_throttled(): void
@@ -164,5 +251,204 @@ class PublicOverviewTest extends TestCase
         $this->assertStringContainsString('hash_equals(', $source);
         $this->assertStringNotContainsString('$configuredToken === $token', $source);
         $this->assertStringNotContainsString('$token === $configuredToken', $source);
+    }
+
+    /**
+     * T7a: the "Showing the N most recent findings per source" prose must be
+     * derived from PublicOverviewController::FINDINGS_PER_SOURCE (read here
+     * via reflection, since the constant is private) rather than a literal
+     * "5" in the Blade template — otherwise a future change to the cap
+     * silently desyncs the copy from the actual behavior. Reading the
+     * constant's live value (rather than hardcoding "5" in this assertion
+     * too) means this test only passes if the page's wording actually
+     * tracks whatever the constant currently says.
+     */
+    public function test_findings_per_source_prose_derives_from_the_constant(): void
+    {
+        $cap = (new \ReflectionClass(PublicOverviewController::class))->getConstant('FINDINGS_PER_SOURCE');
+
+        $this->get(route('public.overview', self::TOKEN))
+            ->assertSee("Showing the {$cap} most recent findings per source", false);
+    }
+
+    // -------------------------------------------------------------------------
+    // Ordering (T7a) — this page shares its ranking SQL with AlertController
+    // (constrainToRecentPerSource()/severityRankSql()); these tests pin that
+    // contract on this surface too, so it cannot silently drift from the
+    // dashboard's.
+    // -------------------------------------------------------------------------
+
+    /**
+     * T7a: `medium` is the canonical vocabulary value for GitHub's REST
+     * severity. The older/newer pairing (medium is OLDER than low) proves
+     * severity, not recency, drives the order.
+     */
+    public function test_medium_severity_finding_outranks_a_low_severity_finding(): void
+    {
+        $source = AlertSource::factory()->create(['name' => 'Vue']);
+
+        AlertFinding::factory()->for($source, 'alertSource')->create([
+            'title' => 'Newer Low Finding',
+            'severity' => AlertFinding::SEVERITY_LOW,
+            'published_at' => now(),
+        ]);
+        AlertFinding::factory()->for($source, 'alertSource')->create([
+            'title' => 'Older Medium Finding',
+            'severity' => AlertFinding::SEVERITY_MEDIUM,
+            'published_at' => now()->subDays(5),
+        ]);
+
+        $html = $this->get(route('public.overview', self::TOKEN))->getContent();
+
+        $medium = strpos($html, 'Older Medium Finding');
+        $low = strpos($html, 'Newer Low Finding');
+
+        $this->assertNotFalse($medium);
+        $this->assertNotFalse($low);
+        $this->assertLessThan($low, $medium);
+    }
+
+    /**
+     * Mirrors AlertControllerTest's equivalent, pinning the full
+     * is_security / severity / recency ordering contract on this surface:
+     * severity trumps recency, and unrated sorts after every declared
+     * severity.
+     */
+    public function test_findings_are_ordered_by_severity_most_severe_first_then_recency_with_unrated_last(): void
+    {
+        $source = AlertSource::factory()->create(['name' => 'Laravel']);
+
+        AlertFinding::factory()->for($source, 'alertSource')->create([
+            'title' => 'Older Low Finding',
+            'severity' => AlertFinding::SEVERITY_LOW,
+            'published_at' => now()->subDays(5),
+        ]);
+        AlertFinding::factory()->for($source, 'alertSource')->create([
+            'title' => 'Unrated Finding',
+            'severity' => null,
+            'published_at' => now(),
+        ]);
+        AlertFinding::factory()->for($source, 'alertSource')->create([
+            'title' => 'Older Critical Finding',
+            'severity' => AlertFinding::SEVERITY_CRITICAL,
+            'published_at' => now()->subDays(10),
+        ]);
+        AlertFinding::factory()->for($source, 'alertSource')->create([
+            'title' => 'Newer Critical Finding',
+            'severity' => AlertFinding::SEVERITY_CRITICAL,
+            'published_at' => now()->subDay(),
+        ]);
+
+        $html = $this->get(route('public.overview', self::TOKEN))->getContent();
+
+        $newerCritical = strpos($html, 'Newer Critical Finding');
+        $olderCritical = strpos($html, 'Older Critical Finding');
+        $low = strpos($html, 'Older Low Finding');
+        $unrated = strpos($html, 'Unrated Finding');
+
+        $this->assertNotFalse($newerCritical);
+        $this->assertNotFalse($olderCritical);
+        $this->assertNotFalse($low);
+        $this->assertNotFalse($unrated);
+
+        $this->assertLessThan($olderCritical, $newerCritical);
+        $this->assertLessThan($low, $olderCritical);
+        $this->assertLessThan($unrated, $low);
+    }
+
+    // -------------------------------------------------------------------------
+    // Findings cap (T7c defect 5) — this surface shares constrainToRecentPerSource()
+    // with AlertController, but unlike AlertControllerTest's equivalent
+    // (test_dashboard_caps_findings_per_source_and_shows_true_total()),
+    // nothing here previously exercised the cap boundary: every ordering
+    // test above creates fewer findings than FINDINGS_PER_SOURCE, so a
+    // change to the constant's value, or a broken/deleted ORDER BY inside
+    // the shared ROW_NUMBER() window (which decides which rows survive the
+    // cap, not just how they render), would not fail anything in this file.
+    // -------------------------------------------------------------------------
+
+    /**
+     * 8 findings on one source, cap is PublicOverviewController::FINDINGS_PER_SOURCE
+     * (5): the eager-loaded collection handed to the view must contain
+     * exactly 5 rows — the 5 most recently published — while the true total
+     * (8) stays visible via "Showing 5 of 8".
+     */
+    public function test_public_overview_caps_findings_per_source_and_shows_true_total(): void
+    {
+        // Reuses the seeded 'php' source (RefreshDatabase seeds the six
+        // fixed ecosystems via AlertSourceSeeder) rather than
+        // AlertSource::factory()->create(['name' => 'PHP']): a factory row
+        // would collide on the name "PHP" with the already-seeded source,
+        // making firstWhere('name', 'PHP') below pick whichever of the two
+        // happens to sort first — ambiguous and not what this test means to
+        // exercise.
+        $source = AlertSource::where('key', 'php')->firstOrFail();
+
+        // Zero-padded labels ("01".."08") so no title is a substring of
+        // another (e.g. unpadded "Finding 1" would be a substring of
+        // "Finding 11"/"Finding 1X"), which would make assertSee/
+        // assertDontSee below false positives regardless of production code.
+        for ($i = 1; $i <= 8; $i++) {
+            $label = sprintf('%02d', $i);
+            AlertFinding::factory()->for($source, 'alertSource')->create([
+                'external_id' => "finding-{$label}",
+                'title' => "PHP Finding {$label}",
+                'published_at' => Carbon::parse('2026-01-01')->addDays($i),
+            ]);
+        }
+
+        $response = $this->get(route('public.overview', self::TOKEN));
+        $response->assertOk();
+
+        $loadedFindings = $response->viewData('sources')->firstWhere('name', 'PHP')->findings;
+
+        // The cap must come from the query itself: if it were merely a
+        // Blade-side take(5) over an uncapped eager load, the collection
+        // handed to the view would still carry all 8 rows here.
+        $this->assertCount(5, $loadedFindings);
+
+        $response->assertSee('Showing 5 of 8');
+
+        // The 5 kept are the most recently published; the 3 oldest
+        // (days 1-3) must not appear at all.
+        for ($i = 1; $i <= 3; $i++) {
+            $response->assertDontSee('PHP Finding '.sprintf('%02d', $i));
+        }
+        for ($i = 4; $i <= 8; $i++) {
+            $response->assertSee('PHP Finding '.sprintf('%02d', $i));
+        }
+    }
+
+    /**
+     * Mirrors AlertControllerTest's equivalent: a security finding must
+     * sort above a strictly newer non-security finding of the same
+     * (unrated) severity — this fails if the `is_security DESC` ordering
+     * key is ever dropped from the shared query.
+     */
+    public function test_a_security_finding_sorts_above_a_newer_non_security_finding(): void
+    {
+        $source = AlertSource::factory()->create(['name' => 'PHP']);
+
+        AlertFinding::factory()->for($source, 'alertSource')->create([
+            'title' => 'Older Security Finding',
+            'is_security' => true,
+            'severity' => null,
+            'published_at' => now()->subDays(5),
+        ]);
+        AlertFinding::factory()->for($source, 'alertSource')->create([
+            'title' => 'Newer Non-Security Finding',
+            'is_security' => false,
+            'severity' => null,
+            'published_at' => now(),
+        ]);
+
+        $html = $this->get(route('public.overview', self::TOKEN))->getContent();
+
+        $security = strpos($html, 'Older Security Finding');
+        $nonSecurity = strpos($html, 'Newer Non-Security Finding');
+
+        $this->assertNotFalse($security);
+        $this->assertNotFalse($nonSecurity);
+        $this->assertLessThan($nonSecurity, $security);
     }
 }

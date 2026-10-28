@@ -65,6 +65,19 @@ class PublicStatusTest extends TestCase
             ->assertSee('200');
     }
 
+    /**
+     * T7d: this page's URL carries the monitor's own public_token secret; a
+     * third-party script running in-page could read window.location.href
+     * and exfiltrate it. It must compile locally via Vite instead.
+     */
+    public function test_public_status_page_does_not_load_tailwind_from_a_cdn(): void
+    {
+        $monitor = Monitor::factory()->create();
+
+        $this->get(route('public.status', $monitor->public_token))
+            ->assertDontSee('cdn.tailwindcss.com', false);
+    }
+
     public function test_public_status_page_does_not_expose_owner_information(): void
     {
         $user = User::factory()->create(['email' => 'owner@example.com']);

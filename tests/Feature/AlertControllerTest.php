@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
@@ -107,13 +108,21 @@ class AlertControllerTest extends TestCase
         }
     }
 
+    /**
+     * T7c defect 8: assertSee('never') is satisfied by the unrelated
+     * "Checked {{ ... ?? 'never' }}" timestamp fallback regardless of which
+     * status badge rendered. Assert the "Never checked" badge text itself
+     * (distinct casing/wording from the lowercase 'never' timestamp
+     * fallback), so this fails if that badge branch is ever broken while
+     * the timestamp fallback still happens to read "never".
+     */
     public function test_index_shows_never_checked_fallback_for_a_fresh_source(): void
     {
         $user = User::factory()->create(['role' => User::ROLE_USER]);
 
         $this->actingAs($user)
             ->get(route('alerts.index'))
-            ->assertSee('never');
+            ->assertSee('Never checked');
     }
 
     // -------------------------------------------------------------------------
@@ -149,6 +158,66 @@ class AlertControllerTest extends TestCase
         // Exactly one source is in a failing state; the badge must not leak
         // onto the healthy one.
         $this->assertSame(1, substr_count($response->getContent(), 'Check failing'));
+    }
+
+    // -------------------------------------------------------------------------
+    // Staleness (T7e) — AlertSource::STALE_AFTER_HOURS = 3, hourly schedule.
+    // -------------------------------------------------------------------------
+
+    public function test_a_source_checked_before_the_staleness_threshold_renders_stale_not_healthy(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_USER]);
+
+        $stale = AlertSource::where('key', 'drupal')->firstOrFail();
+        $stale->update([
+            'last_checked_at' => now()->subHours(AlertSource::STALE_AFTER_HOURS)->subMinute(),
+            'last_error' => null,
+        ]);
+
+        $response = $this->actingAs($user)->get(route('alerts.index'));
+
+        $response->assertOk();
+        $response->assertSee('Stale');
+        $response->assertDontSee('>Healthy<', false);
+    }
+
+    public function test_a_source_checked_within_the_staleness_threshold_still_renders_healthy(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_USER]);
+
+        $fresh = AlertSource::where('key', 'drupal')->firstOrFail();
+        $fresh->update([
+            'last_checked_at' => now()->subHours(AlertSource::STALE_AFTER_HOURS)->addMinute(),
+            'last_error' => null,
+        ]);
+
+        $response = $this->actingAs($user)->get(route('alerts.index'));
+
+        $response->assertOk();
+        $response->assertSee('Healthy');
+        $response->assertDontSee('Stale');
+    }
+
+    /**
+     * Precedence pin at the rendered-page level (model-level precedence is
+     * pinned in AlertSourceTest): a source that is both stale and failing
+     * must render "Check failing", never "Stale" alongside it.
+     */
+    public function test_a_source_that_is_both_stale_and_failing_renders_check_failing_not_stale(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_USER]);
+
+        $source = AlertSource::where('key', 'drupal')->firstOrFail();
+        $source->update([
+            'last_checked_at' => now()->subHours(AlertSource::STALE_AFTER_HOURS)->subDay(),
+            'last_error' => 'Connection timed out after 10s',
+        ]);
+
+        $response = $this->actingAs($user)->get(route('alerts.index'));
+
+        $response->assertOk();
+        $response->assertSee('Check failing');
+        $response->assertDontSee('Stale');
     }
 
     // -------------------------------------------------------------------------
@@ -244,6 +313,42 @@ class AlertControllerTest extends TestCase
         $this->assertLessThan($low, $olderCritical);
         // Unrated sorts after every declared severity.
         $this->assertLessThan($unrated, $low);
+    }
+
+    /**
+     * T7a: `medium` is the canonical vocabulary value for GitHub's REST
+     * `GET /advisories` severity (burying a medium-severity advisory under
+     * low-severity ones — which happened for real before T7a, when 19 real
+     * `medium` rows fell into the unrated/"ELSE" branch — is exactly what
+     * this guards against). The older/newer pairing (medium is OLDER than
+     * low) proves severity, not recency, drives the order.
+     */
+    public function test_medium_severity_finding_outranks_a_low_severity_finding(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_USER]);
+        $source = AlertSource::where('key', 'vue')->firstOrFail();
+
+        AlertFinding::factory()->create([
+            'alert_source_id' => $source->id,
+            'title' => 'Newer Low Finding',
+            'severity' => AlertFinding::SEVERITY_LOW,
+            'published_at' => now(),
+        ]);
+        AlertFinding::factory()->create([
+            'alert_source_id' => $source->id,
+            'title' => 'Older Medium Finding',
+            'severity' => AlertFinding::SEVERITY_MEDIUM,
+            'published_at' => now()->subDays(5),
+        ]);
+
+        $html = $this->actingAs($user)->get(route('alerts.index'))->getContent();
+
+        $medium = strpos($html, 'Older Medium Finding');
+        $low = strpos($html, 'Newer Low Finding');
+
+        $this->assertNotFalse($medium);
+        $this->assertNotFalse($low);
+        $this->assertLessThan($low, $medium);
     }
 
     // -------------------------------------------------------------------------
@@ -485,8 +590,49 @@ class AlertControllerTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // T7b defect 1 — a finding whose url carries an unsafe scheme must never
+    // render as a clickable href, regardless of how it reached this column
+    // (fetchers blank it at insert; this is the independent render-boundary
+    // guard — see AlertFinding::safeUrl()).
+    // -------------------------------------------------------------------------
+
+    public function test_a_finding_with_a_javascript_scheme_url_does_not_render_a_dangerous_href(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_USER]);
+        $source = AlertSource::where('key', 'php')->firstOrFail();
+
+        AlertFinding::factory()->create([
+            'alert_source_id' => $source->id,
+            'title' => 'Finding With Dangerous Link',
+            'url' => 'javascript:alert(document.cookie)',
+        ]);
+
+        $response = $this->actingAs($user)->get(route('alerts.index'));
+
+        $response->assertOk();
+        $response->assertSee('Finding With Dangerous Link');
+        $response->assertDontSee('href="javascript:', false);
+    }
+
+    // -------------------------------------------------------------------------
     // Check now — admin only, synchronous
     // -------------------------------------------------------------------------
+
+    /**
+     * T7b defect 2: three of the six sources share GitHub's unauthenticated
+     * 60-request/hour budget (see AlertCheckService's class docblock and
+     * routes/console.php). Holding the button down with no throttle burns
+     * that shared budget six real requests at a time, breaking the hourly
+     * scheduled path this button exists to shortcut. Matches the repo's own
+     * precedent one line away: profile.notifications.test carries
+     * throttle:5,1.
+     */
+    public function test_check_now_route_is_throttled(): void
+    {
+        $middleware = Route::getRoutes()->getByName('alerts.check-now')->gatherMiddleware();
+
+        $this->assertContains('throttle:5,1', $middleware);
+    }
 
     public function test_non_admin_cannot_check_now(): void
     {
@@ -507,19 +653,84 @@ class AlertControllerTest extends TestCase
             ->assertRedirect(route('alerts.index'))
             ->assertSessionHas('success');
 
-        $this->assertSame(
-            6,
-            AlertSource::query()->whereNotNull('last_checked_at')->count(),
-            'Expected every tracked source to have been checked.'
+        $sources = AlertSource::all();
+
+        $this->assertCount(6, $sources);
+        $this->assertTrue(
+            $sources->every(
+                fn (AlertSource $source) => $source->last_checked_at !== null
+                    && $source->last_success_at !== null
+                    && $source->last_error === null
+            ),
+            'Expected every tracked source to have actually succeeded (last_error null, last_success_at set), not merely been checked.'
         );
     }
 
+    /**
+     * T7b defect 3: checkNow() always flashed the identical "Check completed
+     * for all sources." banner regardless of outcome —
+     * AlertCheckService::check() swallows every AlertFeedException into
+     * last_error and returns normally (see its class docblock), so a run
+     * where every source failed looked identical to a fully successful one.
+     * The flash must name how many failed and which ones.
+     */
+    public function test_check_now_flash_names_the_failures_when_every_source_check_fails(): void
+    {
+        $admin = $this->admin();
+        Http::fake(['*' => Http::response('Service Unavailable', 503)]);
+
+        $response = $this->actingAs($admin)->post(route('alerts.check-now'));
+
+        $response->assertRedirect(route('alerts.index'));
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas(
+            'error',
+            '6 of 6 source checks failed: PHP, Drupal, WordPress, Laravel, Vue, Angular.'
+        );
+    }
+
+    /**
+     * T7b defect 3, triangulation: a partial failure (one of six) must be
+     * named specifically, not collapsed into the same generic message as a
+     * full failure or a full success.
+     */
+    public function test_check_now_flash_names_the_failures_when_one_source_check_fails(): void
+    {
+        $admin = $this->admin();
+
+        Http::fake([
+            'https://www.php.net/feed.atom' => Http::response('Service Unavailable', 503),
+            'https://www.drupal.org/security/rss.xml' => Http::response($this->minimalRssFeed(), 200),
+            'https://wordpress.org/news/category/security/feed/' => Http::response($this->minimalRssFeed(), 200),
+            'https://api.github.com/advisories*' => fn () => Http::response('[]', 200),
+        ]);
+
+        $response = $this->actingAs($admin)->post(route('alerts.check-now'));
+
+        $response->assertSessionMissing('success');
+        $response->assertSessionHas('error', '1 of 6 source checks failed: PHP.');
+    }
+
+    /**
+     * T7c defect 7: assertSee('Tech Update Alerts') alone is satisfied by
+     * the page's own <h1> (resources/views/alerts/index.blade.php), so it
+     * passes even with both nav links deleted from
+     * resources/views/layouts/navigation.blade.php. The nav renders the same
+     * text twice more (desktop + responsive link), on top of the <h1> — so
+     * require at least two occurrences, which only both nav links being
+     * deleted can break.
+     */
     public function test_navigation_shows_the_alerts_tab(): void
     {
         $user = User::factory()->create(['role' => User::ROLE_USER]);
 
-        $this->actingAs($user)
-            ->get(route('alerts.index'))
-            ->assertSee('Tech Update Alerts');
+        $response = $this->actingAs($user)->get(route('alerts.index'));
+
+        $response->assertOk();
+        $this->assertGreaterThanOrEqual(
+            2,
+            substr_count($response->getContent(), 'Tech Update Alerts'),
+            'Expected the nav link(s) in addition to the page heading to read "Tech Update Alerts".'
+        );
     }
 }

@@ -25,19 +25,20 @@
     </div>
     @endif
 
+    @if (session('error'))
+    <div class="mb-4 text-sm text-red-700 bg-red-100 border border-red-200 rounded px-4 py-2">
+        {{ session('error') }}
+    </div>
+    @endif
+
     <div class="space-y-6">
         @foreach ($sources as $source)
         <div class="border border-gray-200 rounded-lg p-4">
             <div class="flex items-center justify-between mb-2">
                 <h2 class="text-lg font-semibold text-gray-900">{{ $source->name }}</h2>
                 <div class="flex items-center space-x-2">
-                    @if ($source->last_error)
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Check failing</span>
-                    @elseif ($source->last_checked_at)
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Healthy</span>
-                    @else
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">Never checked</span>
-                    @endif
+                    @php($healthBadge = $source->healthBadge())
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {{ $healthBadge['classes'] }}">{{ $healthBadge['label'] }}</span>
                     <span class="text-xs text-gray-500">
                         Checked {{ $source->last_checked_at?->diffForHumans() ?? 'never' }}
                     </span>
@@ -72,25 +73,20 @@
                         @forelse ($source->findings as $finding)
                         <tr>
                             <td class="px-3 py-2 text-sm text-gray-900">
-                                <a href="{{ $finding->url }}" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:text-indigo-900">
+                                @if ($finding->safeUrl())
+                                <a href="{{ $finding->safeUrl() }}" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:text-indigo-900">
                                     {{ $finding->title }}
                                 </a>
+                                @else
+                                <span>{{ $finding->title }}</span>
+                                @endif
                             </td>
                             <td class="px-3 py-2 whitespace-nowrap">
                                 @if ($finding->is_security)
                                     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Security</span>
                                 @endif
-                                @if ($finding->severity === \App\Models\AlertFinding::SEVERITY_CRITICAL)
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Critical</span>
-                                @elseif ($finding->severity === \App\Models\AlertFinding::SEVERITY_HIGH)
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800">High</span>
-                                @elseif ($finding->severity === \App\Models\AlertFinding::SEVERITY_MODERATE)
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Moderate</span>
-                                @elseif ($finding->severity === \App\Models\AlertFinding::SEVERITY_LOW)
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Low</span>
-                                @else
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">Unrated</span>
-                                @endif
+                                @php($severityBadge = $finding->severityBadge())
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {{ $severityBadge['classes'] }}">{{ $severityBadge['label'] }}</span>
                             </td>
                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
                                 {{ $finding->published_at?->diffForHumans() ?? 'Unknown date' }}
