@@ -37,7 +37,20 @@ return new class extends Migration
             $table->string('url', 2048);
             $table->string('severity')->nullable();
             $table->timestamp('published_at')->nullable()->index();
-            $table->timestamp('first_seen_at');
+            // useCurrent() is required for the DDL to be accepted at all on a
+            // production-style MySQL/MariaDB, not a convenience: with
+            // explicit_defaults_for_timestamp = 0 the server hands every
+            // TIMESTAMP NOT NULL column after the first one an implicit
+            // default of '0000-00-00 00:00:00', and a sql_mode carrying
+            // NO_ZERO_DATE then rejects the CREATE with errno 1067
+            // ("Invalid default value for 'first_seen_at'"). DDEV runs
+            // explicit_defaults_for_timestamp = 1, so the broken DDL was
+            // accepted locally and only failed on the real deploy.
+            // The value is always written explicitly by
+            // AlertCheckService::insertFinding() and AlertFindingFactory, so
+            // this default is never actually used — it exists to make the
+            // column definition legal on both server configurations.
+            $table->timestamp('first_seen_at')->useCurrent();
             $table->timestamps();
 
             $table->unique(['alert_source_id', 'external_id']);
